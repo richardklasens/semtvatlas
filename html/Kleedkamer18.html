@@ -1,0 +1,78 @@
+﻿<!DOCTYPE html>
+<html lang="nl">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SEM-TV</title>
+  <link rel="stylesheet" type="text/css" href="semtv.css" />
+  <script type="text/javascript" src="jquery-1.7.1.min.js"></script>
+  <script type="text/javascript" src="semtv-1.4-noscroll.min.js"></script>
+</head>
+
+<body>
+  <div
+    data-role='Settings'
+    data-url="https://wildlands.smarteventmanager.nl/api/pages"
+    data-companycode="ATL"
+    data-showfirstonly="false"
+    data-pretime="300"
+    data-posttime=""
+    data-removeatendoffset="60"
+    data-scrollspeed='2'
+    data-scrollbackspeed='12'
+    data-scrollpause='5'
+    data-scrolltimerinterval='30'
+    data-refreshtimerinterval='600'
+    data-dateoffset='0'
+    data-facilityids='[136]'> <!-- Kleedkamer 1.8 -->
+  </div>
+
+  <div data-role='Header'  class='header'>
+    <h2>KLEEDKAMER 1.8</h2>
+  </div>
+
+  <div data-role='Body' class="body">
+    <div class="reservations">
+      <table>
+        <tbody data-role='TemplateContainer' data-type='ReservationFacility'>
+          <tr class="reservation-item reservation-name" data-recordnumber='{RecordNumber}'>
+            <td>{WelcomeText}</td>
+          </tr>
+          <tr class="reservation-item reservation-name-fallback" data-recordnumber='{RecordNumber}'>
+            <td>{ReservationName}</td>
+          </tr>
+          <tr class="reservation-item" data-recordnumber='{RecordNumber}'>
+            <td>{FacilityWelcomeText}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="fallback-message">
+        <p>Kleedkamer niet in gebruik</p>
+      </div>
+    </div>
+  </div>
+
+  <div data-role='Footer' class='footer'>
+    <table>
+      <tr>
+        <td class="footer-message">Voel je thuis in ATLAS! Kunnen we iets voor je doen? Laat het weten!</td>
+        <td class="footer-time"><span id="current-time"></span></td>
+      </tr>
+    </table>
+  </div>
+
+  <script>
+    function updateTime() {
+      const now = new Date();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('current-time').textContent = hours + ':' + minutes;
+    }
+
+    // Update time immediately and then every second
+    updateTime();
+    setInterval(updateTime, 1000);
+  </script>
+</body>
+</html>

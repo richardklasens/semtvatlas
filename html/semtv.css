@@ -1,0 +1,255 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@font-face
+{
+	font-family: basicFont;
+	src: url('PPNeueMachina-InktrapRegular.woff') format('truetype');
+}
+
+@font-face
+{
+	font-family: headerFont;
+	src: url('BBManualMonoProOR-Medium.otf') format('opentype');
+}
+
+body
+{
+  background-color: #501237;
+  background-image: none;
+	margin: 0;
+	padding: 0;
+	font-size: 11pt;
+  font-family: basicFont, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+table
+{
+	width: 100%;
+	border-spacing: 0;
+	border-collapse: collapse;
+}
+
+.header
+{
+  background: #ff5000;
+  border-bottom: none;
+  color: #501237;
+  margin: 0;
+  padding: 30px 30px;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.header table tbody tr td:first-child{
+  width: 25%;
+  white-space: nowrap;
+  padding-right: 30px;
+}
+
+.header table tbody tr td:nth-child(2){
+  width: 50%;
+  text-align: center;
+}
+
+.header table tbody tr td:nth-child(3){
+  width: 25%;
+  text-align: right;
+}
+
+.header h1
+{
+  font-family: basicFont, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-size: 2.8vh;
+  font-weight: 600;
+  margin: 0;
+  padding: 0;
+  color: #1a252f;
+  letter-spacing: -0.5px;
+}
+
+.header h2 {
+  font-family: headerFont, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-size: 6vh;
+  font-weight: 700;
+  margin: 0;
+  padding: 0;
+  color: #501237;
+  letter-spacing: 5px;
+  text-align: center;
+}
+
+.header-date {
+  font-size: 2.4vh;
+  font-weight: 500;
+  color: #667a87;
+  text-align: right;
+}
+
+.footer
+{
+	background: #501237;
+	color: #ff5000;
+	margin: 0;
+	padding: 24px 48px;
+	border-radius: 0;
+	box-shadow: none;
+}
+
+.footer-half {
+  font-size: 3vh;
+  vertical-align: text-bottom;
+  width: 50%;
+  font-weight: 500;
+  text-align: right;
+}
+
+.footer table {
+  width: 100%;
+  border-spacing: 0;
+  border-collapse: collapse;
+}
+
+.footer-message {
+  text-align: left;
+  font-size: 2.5vh;
+  font-weight: 500;
+  color: #ff5000;
+}
+
+.footer-time {
+  width: auto;
+  font-size: 5vh;
+  font-weight: 600;
+  text-align: right;
+  font-family: headerFont, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  color: #ff5000;
+}
+
+.footer-error-message{
+  font-size: 2vh;
+  display: block;
+  color: #ff6b6b;
+  font-weight: 600;
+}
+
+.logo
+{
+  background-image: url('logo.jpg');
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-position: center;
+  height: 80px;
+  width: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.4vh;
+  font-weight: 700;
+  color: #ff5000;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.header-logo{
+  margin: 0;
+  text-indent: -9999px;
+}
+
+.footer-logo-item{
+  height: 50px;
+  width: 80px;
+  opacity: 0.5;
+  margin: 0 auto;
+}
+
+.body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reservations {
+  box-sizing: border-box;
+  padding: 12px 24px 24px 24px;
+}
+
+.reservations table {
+  border-collapse: separate;
+  border-spacing: 0 20px;
+  width: auto;
+  margin: 0 auto;
+}
+
+.reservation-item {
+  background: transparent;
+  transition: all 0.3s ease;
+  border-left: 2px solid #ff5000;
+}
+
+.reservation-item:has(td:empty) {
+  display: none;
+}
+
+
+.reservation-item:nth-child(even) {
+  border-left-color: #ff5000;
+}
+
+.reservation-item td {
+  vertical-align: middle;
+  padding: clamp(15px, 5vw, 30px) clamp(30px, 10vw, 60px);
+  font-size: clamp(0.4em, 2.5vw, 2.5em);
+  font-weight: 700;
+  color: #ff5000;
+  text-align: center;
+}
+
+.reservation-item:first-child td,
+.reservation-item:nth-child(2) td {
+  font-size: clamp(0.9em, 6.5vw, 6.5em);
+}
+
+.reservation-time {
+  padding-left: 20px;
+  padding-right: 0;
+  color: #000000;
+  font-weight: 700;
+  min-width: 150px;
+}
+
+.reservation-facility {
+  padding-right: 20px;
+  text-align: left;
+  color: #000000;
+  font-size: 1.2em;
+  font-weight: 700;
+}
+
+.fallback-message {
+  text-align: center;
+  padding: 60px 40px;
+  color: #ff5000;
+  font-size: clamp(0.4em, 2.5vw, 2.5em);
+  font-weight: 700;
+  display: block;
+}
+
+.fallback-message p {
+  margin: 0;
+  padding: 0;
+}
+
+/* Hide fallback when there are reservations */
+.reservations table tbody:not(:empty) ~ .fallback-message {
+  display: none;
+}
+
+/* Hide fallback when there are template items populated with data */
+.reservations:has(.reservation-item:not([data-recordnumber='{RecordNumber}'])) .fallback-message {
+  display: none;
+}
+
+/* Hide ReservationName fallback when WelcomeText is filled */
+.reservation-name:not(:has(td:empty)) ~ .reservation-name-fallback {
+  display: none;
+}
