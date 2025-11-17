@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  semtvatlas-webserver:
+    build: .
+    container_name: semtvatlas-webserver
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    networks:
+      - webserver-network
+
+networks:
+  webserver-network:
+    driver: bridge
