@@ -309,10 +309,13 @@ function deviceConfigFor(screen) {
   };
 }
 
+// bevestigingen van schermen: commando-id -> tijdstip waarop het scherm meldde dat het is uitgevoerd
+const cmdDone = {};
 function queueCommand(screenId, type, params) {
   const list = db.commands[screenId] = db.commands[screenId] || [];
   // dubbele identieke commando's niet opstapelen
-  if (list.some(c => c.type === type && JSON.stringify(c.params || {}) === JSON.stringify(params || {}))) return null;
+  const same = list.find(c => c.type === type && JSON.stringify(c.params || {}) === JSON.stringify(params || {}));
+  if (same) return same;
   const cmd = { id: uid(), type, params: params || {}, created: Date.now() };
   list.push(cmd); saveDb(); return cmd;
 }
@@ -355,7 +358,8 @@ async function handleApi(req, res, url) {
     const sc = screenById(id);
     if (!sc) return send(res, 404, { error: 'onbekend scherm' });
     const body = await readBody(req);
-    (body.ackIds || []).forEach(a => { db.commands[id] = (db.commands[id] || []).filter(c => c.id !== a); });
+    (body.ackIds || []).forEach(a => { cmdDone[a] = Date.now(); db.commands[id] = (db.commands[id] || []).filter(c => c.id !== a); });
+    Object.keys(cmdDone).forEach(k => { if (Date.now() - cmdDone[k] > 3600000) delete cmdDone[k]; });
     db.devices[id] = Object.assign({}, body, { ackIds: undefined, lastSeen: Date.now(), ip: (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString() });
     saveDb();
     return send(res, 200, { commands: db.commands[id] || [], config: deviceConfigFor(sc), serverTime: Date.now() });
@@ -406,8 +410,19 @@ async function handleApi(req, res, url) {
     if (mt) {
       const id = decodeURIComponent(mt[1]); const sc = screenById(id);
       if (!sc) return send(res, 404, { error: 'onbekend scherm' });
-      if (m === 'PUT') { Object.assign(sc, await readBody(req), { id }); saveDb(); refreshSem(); return send(res, 200, sc); }
+      if (m === 'PUT') {
+        Object.assign(sc, await readBody(req), { id }); saveDb();
+        try { await refreshSem(); } catch (e) {}
+        // na opslaan: scherm automatisch herladen; het portaal volgt via /api/admin/commands/:id of het scherm dit heeft uitgevoerd
+        const cmd = queueCommand(id, 'reload', { by: 'save' });
+        return send(res, 200, Object.assign({}, sc, { _cmd: cmd && cmd.id }));
+      }
       if (m === 'DELETE') { db.screens = db.screens.filter(s => s.id !== id); delete db.devices[id]; delete db.commands[id]; saveDb(); return send(res, 200, { ok: true }); }
+    }
+    mt = p.match(/^\/api\/admin\/commands\/([^/]+)$/);
+    if (mt && m === 'GET') {
+      const cid = decodeURIComponent(mt[1]);
+      return send(res, 200, { done: !!cmdDone[cid], at: cmdDone[cid] || null });
     }
     mt = p.match(/^\/api\/admin\/screens\/([^/]+)\/command$/);
     if (mt && m === 'POST') {

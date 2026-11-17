@@ -67,7 +67,18 @@
   var TOKEN = localStorage.getItem('semtv.admin') || '', S = null, TAB = 'screens', SEL = {};
   var $ = function (s, r) { return (r || document).querySelector(s); };
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
-  function toast(t) { var e = $('#toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(function () { e.style.display = 'none'; }, 2500); }
+  // na opslaan: wacht op de bevestiging van het scherm dat het herladen is uitgevoerd
+  function watchReload(cmdId, name, screenId) {
+    toast('Opgeslagen — scherm "' + name + '" wordt herladen…');
+    var tries = 0, iv = setInterval(function () {
+      tries++;
+      api('GET', '/commands/' + encodeURIComponent(cmdId)).then(function (r) {
+        if (r.done) { clearInterval(iv); toast('✓ "' + name + '" heeft het herladen uitgevoerd'); refresh(); }
+        else if (tries >= 20) { clearInterval(iv); toast('"' + name + '" heeft nog niet bevestigd — offline? Het herladen volgt zodra het scherm online is'); }
+      }).catch(function () {});
+    }, 2000);
+  }
+  function toast(t) { var e = $('#toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(function () { e.style.display = 'none'; }, 4000); }
 
   function api(method, path, body) {
     return fetch('/api/admin' + path, { method: method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: body ? JSON.stringify(body) : undefined })
@@ -169,7 +180,7 @@
       $('#addSlide', d).onclick = function () { collect(); sc.slides.push({ kind: 'clock', durationSec: 10 }); draw(); };
       $('#cancel', d).onclick = function () { d.close(); };
       if (id) $('#del', d).onclick = function () { if (confirm('Scherm verwijderen?')) api('DELETE', '/screens/' + encodeURIComponent(id)).then(function () { d.close(); refresh(); }); };
-      $('#save', d).onclick = function () { collect(); (id ? api('PUT', '/screens/' + encodeURIComponent(id), sc) : api('POST', '/screens', sc)).then(function () { d.close(); toast('Opgeslagen'); refresh(); }).catch(function (e) { toast(e.message); }); };
+      $('#save', d).onclick = function () { collect(); (id ? api('PUT', '/screens/' + encodeURIComponent(id), sc) : api('POST', '/screens', sc)).then(function (r) { d.close(); toast('Opgeslagen'); refresh(); if (id && r && r._cmd) watchReload(r._cmd, sc.name || id, id); }).catch(function (e) { toast(e.message); }); };
     }
     var collect; draw(); d.showModal();
   }
