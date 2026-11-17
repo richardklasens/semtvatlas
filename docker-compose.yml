@@ -4,7 +4,7 @@ services:
     container_name: semtvatlas
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "${PORT:-8080}:80"   # poort op de server; pas aan met de variabele PORT als 8080 bezet is
     environment:
       # Verander deze waarden vóór de eerste start!
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-verander-mij}"
