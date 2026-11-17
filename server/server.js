@@ -172,7 +172,7 @@ async function fetchFacility(fid) {
 function mockFacility(fid) {
   const names = ['Toneelgroep Vondel', 'Kinderkoor Rijnmond', 'Dansschool Lenore', 'Orkest Haagland'];
   if (fid % 3 === 0) return { raw: '', items: [] };
-  const n = names[fid % names.length];
+  const n = names[(process.env.SEM_MOCK_MULTI === '1' && fid === 13 ? 10 : fid) % names.length]; // SEM_MOCK_MULTI=1: Grote en Kleine Zaal met dezelfde reservering (test)
   return { raw: '', items: [{ recordNumber: '1', welcome: 'Welkom ' + n, name: n, facilityWelcome: 'Veel plezier vandaag!', facilityName: 'Kleedkamer ' + fid }] };
 }
 
@@ -264,14 +264,15 @@ function activeMessages(screen) {
 const normName = v => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
 /** Bepaalt bij welke zaal een reservering hoort: eigen facility = zaal, of dezelfde naam op de zaal-facility. */
 function zoneOf(item, ownFid) {
-  const key = normName(item.name || item.welcome);
+  const key = normName(item.name || item.welcome), hits = [];
   for (const z of (db.settings.zones || [])) {
     if (!z.facilityId) continue;
-    if (Number(z.facilityId) === Number(ownFid)) return z.key;
     const c = semCache.get(Number(z.facilityId));
-    if (key && c && c.items.some(i => normName(i.name || i.welcome) === key)) return z.key;
+    if (Number(z.facilityId) === Number(ownFid) || (key && c && c.items.some(i => normName(i.name || i.welcome) === key))) hits.push(z);
   }
-  return null;
+  // meerdere zalen in één reservering: geen eigen vormgeving, de speler valt terug op de standaardachtergrond
+  if (hits.length > 1) return { zone: 'multi', zoneLabels: hits.map(z => z.label || z.key) };
+  return { zone: hits.length ? hits[0].key : null };
 }
 
 function buildState(screen) {
@@ -279,7 +280,7 @@ function buildState(screen) {
   (screen.slides || []).forEach(sl => (sl.facilityIds || []).forEach(fid => {
     const c = semCache.get(Number(fid));
     facilities[fid] = c
-      ? { items: c.items.map(it => Object.assign({}, it, { zone: zoneOf(it, fid) })), ok: c.ok, fetchedAt: c.fetchedAt }
+      ? { items: c.items.map(it => Object.assign({}, it, zoneOf(it, fid))), ok: c.ok, fetchedAt: c.fetchedAt }
       : { items: [], ok: false, fetchedAt: 0 };
   }));
   const zones = {};

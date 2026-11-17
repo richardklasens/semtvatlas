@@ -244,6 +244,7 @@
       // Welkomsttekst vervangt de reserveringsnaam als die is ingevuld; anders de reserveringsnaam
       h += '<div class="line main"><span class="k">Voorstelling</span><span class="v">' + esc(firstText(it)) + '</span></div>';
       if (z && z.showLabel) h += '<div class="line"><span class="k">Zaal</span><span class="v">' + esc(z.label) + '</span></div>';
+      else if (it.zone === 'multi' && it.zoneLabels) h += '<div class="line"><span class="k">Zaal</span><span class="v">' + esc(it.zoneLabels.join(' + ')) + '</span></div>';
       if (it.facilityWelcome) h += '<div class="line"><span class="k">Kleedkamer van</span><span class="v" style="white-space:pre-line">' + esc(it.facilityWelcome) + '</span></div>';
       h += '</div>';
     });
@@ -271,7 +272,9 @@
       var rows = list.filter(function (g) { return g.zone === zk; });
       if (rows.length) blocks.push({ title: STATE.zones[zk].label || zk, rows: rows });
     });
-    var rest = list.filter(function (g) { return !g.zone || !(STATE.zones && STATE.zones[g.zone]); });
+    var multi = list.filter(function (g) { return g.zone === 'multi'; });
+    if (multi.length) blocks.push({ title: 'Beide zalen', rows: multi });
+    var rest = list.filter(function (g) { return g.zone !== 'multi' && (!g.zone || !(STATE.zones && STATE.zones[g.zone])); });
     var head = '<div class="badge ovb"><span class="bl">Kleedkamers</span><span class="bn">' + esc(sl.badge || 'Overzicht') + '</span></div>';
     if (!list.length) return head + '<div class="sched"><div class="line main idle"><span class="k">Status</span><span class="v">' + esc(STATE.texts.overviewFallback) + '</span></div></div>';
     // lettergrootte op basis van het aantal rijen in het langste blok; past het niet, dan scrolt de lijst
