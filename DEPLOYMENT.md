@@ -1,97 +1,64 @@
-# Deployment Instructies - SEMT Vatlas Webserver
+# Deployment – SEM-TV Atlas server
 
-Deze instructies helpen je om de HTML pagina's te serveren via een nginx webserver in Portainer.
+De server (Node 22, geen npm-installatie nodig) draait in één container. Alle instellingen, schermen en berichten
+staan in het volume `/data` (`db.json`) – maak daar een backup van.
 
-## Optie 1: Deployment via Portainer met Docker Compose
+## 1. Portainer (aanbevolen)
 
-### Stappen:
+1. **Stacks → Add stack → Repository** (of *Web editor* met `docker-compose.yml`).
+2. Repository: `https://github.com/richardklasens/semtvatlas`, compose path `docker-compose.yml`.
+3. Environment variables:
+   | Variabele | Betekenis |
+   |---|---|
+   | `ADMIN_PASSWORD` | wachtwoord voor het beheerportaal (**verplicht aanpassen**) |
+   | `DEVICE_KEY` | optioneel; als ingevuld moeten de Android-apps dezelfde sleutel meesturen |
+   | `SEM_MOCK` | `1` = testdata zonder SEM-verbinding (handig om eerst alles uit te proberen) |
+4. Deploy. Open `http://<server>:8080/admin/`.
 
-1. **Log in op Portainer**
-   - Ga naar je Portainer interface
+Lokaal: `ADMIN_PASSWORD=geheim docker compose up -d --build`.
 
-2. **Navigeer naar Stacks**
-   - Klik op "Stacks" in het linker menu
-   - Klik op "+ Add stack"
+## 2. Eerste keer inrichten
 
-3. **Stack configureren**
-   - **Name**: `semtvatlas-webserver`
-   - **Build method**: Kies "Repository"
-   - **Repository URL**: Vul je Git repository URL in
-   - Of kies "Upload" en upload het `docker-compose.yml` bestand
+1. **SEM-status → API-test**: vul een facility-ID in (bijv. `22`) en klik *Test ophalen*. Je ziet de ruwe HTML die SEM
+   teruggeeft en wat de server eruit haalt. De server stuurt SEM een eigen template mee (zelfde `jsonTemplate`-aanroep
+   als de oude pagina's) die per reservering een tabelrij met `WelcomeText`, `ReservationName`, `FacilityWelcomeText`
+   en `FacilityName` oplevert. **Dit is nog niet tegen de echte SEM getest** – controleer dit als eerste. Komt er niets
+   uit terwijl er wel een reservering is, stuur me dan de ruwe HTML en ik pas de parser aan.
+2. **Instellingen**: SEM-URL/company code (voorgevuld met de waarden uit de oude pagina's), voettekst, standaard
+   touch-timeout, beheer-pincode.
+3. **Schermen**: bij de eerste start zijn de 17 kleedkamers en het overzicht aangemaakt (facility-ID's overgenomen uit
+   `html/`). Per scherm stel je de *slides* in die achter elkaar worden getoond:
 
-4. **Deploy de stack**
-   - Klik op "Deploy the stack"
+   | Slide | Toont |
+   |---|---|
+   | Kleedkamer | reservering van één facility (of "niet in gebruik") |
+   | Overzicht | alle reserveringen van meerdere facilities |
+   | Mededelingen | actieve berichten uit het tabblad *Berichten* (doel per scherm of groep, periode) |
+   | Klok | tijd en datum |
+   | Weer | huidig weer en 3-daagse verwachting (Open-Meteo; plaats/coördinaten bij Instellingen) |
+   | Tekst | huisregels, route, vrije tekst met optionele afbeelding |
 
-5. **Toegang tot de webserver**
-   - Open je browser en ga naar: `http://<ip-van-je-server>:8080/Kleedkameroverzicht.html`
-   - Alle HTML pagina's zijn beschikbaar via: `http://<ip-van-je-server>:8080/<bestandsnaam>.html`
+## 3. Schermen koppelen
 
-## Optie 2: Deployment via Portainer met Custom Container
+* **Android TV / browser**: open `http://<server>:8080/player/?screen=<scherm-id>` (bijv. `kleedkamer-0-1`) en zet de
+  browser op volledig scherm. Zonder `screen=` krijg je een keuzelijst. De pagina meldt zich ook aan het beheerportaal
+  (status online, en *Herladen* op afstand werkt).
+* **Ilyama-panels**: installeer de Android-app, zie [android/README.md](android/README.md).
 
-### Stappen:
+## 4. APK beschikbaar maken (optioneel)
 
-1. **Build de Docker image eerst (op je ontwikkelmachine)**
-   ```bash
-   docker build -t semtvatlas-webserver .
-   ```
+Kopieer de gebouwde `app-release.apk` naar het volume in `/data/downloads/`; hij is dan bereikbaar op
+`http://<server>:8080/downloads/app-release.apk` (handig om panels zonder USB te installeren).
 
-2. **Push naar Docker Hub (optioneel)**
-   ```bash
-   docker tag semtvatlas-webserver jouw-dockerhub-username/semtvatlas-webserver:latest
-   docker push jouw-dockerhub-username/semtvatlas-webserver:latest
-   ```
+## Beveiliging
 
-3. **In Portainer**
-   - Ga naar "Containers"
-   - Klik op "+ Add container"
-   - **Name**: `semtvatlas-webserver`
-   - **Image**: `jouw-dockerhub-username/semtvatlas-webserver:latest` (of een lokale image)
-   - **Port mapping**:
-     - Host: `8080`
-     - Container: `80`
-   - Klik op "Deploy the container"
-
-## Optie 3: Lokaal testen (zonder Portainer)
-
-```bash
-# Build de image
-docker build -t semtvatlas-webserver .
-
-# Run de container
-docker run -d -p 8080:80 --name semtvatlas-webserver semtvatlas-webserver
-
-# Of gebruik docker-compose
-docker-compose up -d
-```
-
-## Poort aanpassen
-
-Als poort 8080 al in gebruik is, pas dan de `docker-compose.yml` aan:
-
-```yaml
-ports:
-  - "3000:80"  # Verander 8080 naar een andere poort
-```
-
-## Beschikbare pagina's
-
-Na deployment zijn de volgende pagina's beschikbaar:
-
-- `http://<ip>:8080/Kleedkameroverzicht.html`
-- `http://<ip>:8080/Kleedkamer01.html`
-- `http://<ip>:8080/Kleedkamer02.html`
-- etc.
+* Draai de server alleen op het interne netwerk, of achter een reverse proxy met HTTPS.
+* Wijzig `ADMIN_PASSWORD`. Gebruik `DEVICE_KEY` als je de app-API niet open wilt hebben.
+* De player-API (`/api/player/...`) is bewust zonder inlog, want de schermen tonen toch publieke informatie.
 
 ## Troubleshooting
 
-### Container start niet
-- Check de logs in Portainer: Containers > semtvatlas-webserver > Logs
-
-### Pagina niet bereikbaar
-- Controleer of de poort open staat in je firewall
-- Controleer of de container draait: `docker ps`
-- Test lokaal eerst: `curl http://localhost:8080/Kleedkameroverzicht.html`
-
-### Bestanden worden niet getoond
-- Controleer of de `html` map bestaat in de build context
-- Rebuild de image: `docker-compose up -d --build`
+* Logs: Portainer → Containers → `semtvatlas` → Logs.
+* Scherm toont "niet in gebruik" terwijl er een reservering is → **SEM-status** bekijken (fout per facility).
+* SEM tijdelijk onbereikbaar → schermen blijven de laatst bekende gegevens tonen; een rood puntje rechtsonder
+  verschijnt als de server meer dan 2 minuten niet bereikbaar is.

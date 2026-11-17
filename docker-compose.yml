@@ -1,15 +1,18 @@
-version: '3.8'
-
 services:
-  semtvatlas-webserver:
+  semtvatlas:
     build: .
-    container_name: semtvatlas-webserver
+    container_name: semtvatlas
+    restart: unless-stopped
     ports:
       - "8080:80"
-    restart: unless-stopped
-    networks:
-      - webserver-network
+    environment:
+      # Verander deze waarden vóór de eerste start!
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-verander-mij}"
+      DEVICE_KEY: "${DEVICE_KEY:-}"          # optioneel: gedeelde sleutel die de Android-apps meesturen
+      SEM_MOCK: "${SEM_MOCK:-0}"             # 1 = testdata zonder SEM-verbinding
+      TZ: Europe/Amsterdam
+    volumes:
+      - semtv-data:/data
 
-networks:
-  webserver-network:
-    driver: bridge
+volumes:
+  semtv-data:

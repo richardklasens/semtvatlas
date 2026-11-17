@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SEM-TV Atlas beheer</title>
+<style>
+  :root { --bg:#501237; --ac:#ff5000; --ink:#1d1d1f; --line:#e4e0e2; --soft:#f7f4f5; --ok:#1b8a3a; --bad:#c62828; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif; color:var(--ink); background:var(--soft); }
+  header { background:var(--bg); color:#fff; padding:12px 20px; display:flex; align-items:center; gap:24px; position:sticky; top:0; z-index:5; }
+  header h1 { margin:0; font-size:17px; color:var(--ac); letter-spacing:.5px; }
+  nav button { background:none; border:0; color:#fff; padding:8px 12px; font:inherit; cursor:pointer; border-bottom:2px solid transparent; }
+  nav button.on { border-color:var(--ac); color:var(--ac); }
+  main { padding:20px; max-width:1300px; margin:0 auto; }
+  table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { background:#faf8f9; font-size:12px; text-transform:uppercase; color:#6b5b63; }
+  button.b, .btn { background:#fff; border:1px solid #cdbfc6; border-radius:6px; padding:5px 10px; font:inherit; cursor:pointer; }
+  button.b:hover { border-color:var(--ac); }
+  button.p { background:var(--ac); color:#fff; border-color:var(--ac); }
+  button.d { color:var(--bad); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0; }
+  .pill { display:inline-block; border-radius:10px; padding:1px 8px; font-size:12px; color:#fff; }
+  .on-p { background:var(--ok); } .off-p { background:#9a8f94; } .warn-p { background:#e69100; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; margin:12px 0; }
+  label { display:block; font-size:12px; color:#6b5b63; margin:8px 0 2px; }
+  input, select, textarea { width:100%; padding:6px 8px; border:1px solid #cdbfc6; border-radius:6px; font:inherit; background:#fff; }
+  input[type=checkbox] { width:auto; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:0 16px; }
+  .slide { border:1px dashed #cdbfc6; border-radius:6px; padding:10px; margin:8px 0; background:#fcfafb; }
+  .muted { color:#8a7c83; font-size:12px; }
+  #login { max-width:320px; margin:12vh auto; }
+  dialog { border:0; border-radius:10px; padding:20px; width:min(760px,95vw); max-height:92vh; overflow:auto; }
+  dialog::backdrop { background:rgba(0,0,0,.45); }
+  .toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#222; color:#fff; padding:8px 16px; border-radius:6px; display:none; z-index:20; }
+  pre { background:#f3eff1; padding:8px; border-radius:6px; overflow:auto; max-height:240px; }
+</style>
+</head>
+<body>
+<div id="login" class="card" style="display:none">
+  <h2 style="margin-top:0">SEM-TV beheer</h2>
+  <label>Wachtwoord</label><input type="password" id="pw" autofocus>
+  <div class="row"><button class="b p" id="loginBtn">Inloggen</button><span id="loginErr" style="color:var(--bad)"></span></div>
+</div>
+
+<div id="shell" style="display:none">
+  <header>
+    <h1>SEM-TV ATLAS</h1>
+    <nav id="nav">
+      <button data-t="screens" class="on">Schermen</button>
+      <button data-t="messages">Berichten</button>
+      <button data-t="zones">Zalen</button>
+      <button data-t="settings">Instellingen</button>
+      <button data-t="sem">SEM-status</button>
+    </nav>
+    <span style="flex:1"></span><button class="b" id="logout">Uitloggen</button>
+  </header>
+  <main id="main"></main>
+</div>
+<dialog id="dlg"></dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  var TOKEN = localStorage.getItem('semtv.admin') || '', S = null, TAB = 'screens', SEL = {};
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function toast(t) { var e = $('#toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(function () { e.style.display = 'none'; }, 2500); }
+
+  function api(method, path, body) {
+    return fetch('/api/admin' + path, { method: method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { if (r.status === 401) { showLogin(); throw new Error('401'); } return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
+  }
+  function showLogin() { $('#shell').style.display = 'none'; $('#login').style.display = 'block'; }
+  $('#loginBtn').onclick = function () {
+    fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: $('#pw').value }) })
+      .then(function (r) { return r.json(); }).then(function (j) { if (j.token) { TOKEN = j.token; localStorage.setItem('semtv.admin', TOKEN); start(); } else $('#loginErr').textContent = j.error || 'Fout'; });
+  };
+  $('#pw').onkeydown = function (e) { if (e.key === 'Enter') $('#loginBtn').click(); };
+  $('#logout').onclick = function () { localStorage.removeItem('semtv.admin'); TOKEN = ''; showLogin(); };
+  $('#nav').onclick = function (e) { var t = e.target.dataset.t; if (!t) return; TAB = t; [].forEach.call($('#nav').children, function (b) { b.classList.toggle('on', b.dataset.t === t); }); render(); };
+
+  function start() { $('#login').style.display = 'none'; $('#shell').style.display = 'block'; refresh(); }
+  function refresh() { return api('GET', '/state').then(function (s) { S = s; render(); }).catch(function () {}); }
+  setInterval(function () { if (TOKEN && !$('#dlg').open && TAB === 'screens' && !document.activeElement.closest('#main input, #main textarea, #main select')) refresh(); }, 10000);
+
+  /* ------------------------------------------------ helpers */
+  function ago(ts) { if (!ts) return 'nooit'; var s = Math.round((S.serverTime - ts) / 1000); if (s < 60) return s + ' s'; if (s < 3600) return Math.round(s / 60) + ' min'; return Math.round(s / 3600) + ' u'; }
+  function status(id) {
+    var d = S.devices[id]; if (!d) return '<span class="pill off-p">nooit gezien</span>';
+    var age = (S.serverTime - d.lastSeen) / 1000;
+    var on = age < 90;
+    return '<span class="pill ' + (on ? 'on-p' : 'off-p') + '">' + (on ? 'online' : 'offline') + '</span> <span class="muted">' + ago(d.lastSeen) + ' · ' + (d.kind === 'browser' ? 'browser' : 'app ' + esc(d.appVersion || '')) +
+      (d.battery != null && d.battery >= 0 ? ' · ' + d.battery + '%' : '') + (d.touchLocked != null ? ' · touch ' + (d.touchLocked ? 'uit' : 'aan') : '') + (d.screenOn === false ? ' · scherm uit' : '') + '</span>';
+  }
+  function cmd(target, type, params, label) {
+    if ((type === 'reboot') && !confirm('Paneel(en) herstarten?')) return;
+    var body = Object.assign({ type: type, params: params || {} }, target.group ? { group: target.group } : {});
+    api('POST', '/screens/' + (target.group ? '_group' : target.id) + '/command', body).then(function (r) { toast((label || type) + ' verstuurd naar ' + r.queued + ' scherm(en)'); refresh(); }).catch(function (e) { toast(e.message); });
+  }
+
+  /* ------------------------------------------------ tabs */
+  function render() {
+    if (!S) return;
+    ({ screens: rScreens, messages: rMessages, zones: rZones, settings: rSettings, sem: rSem })[TAB]();
+  }
+
+  function rScreens() {
+    var groups = {}; S.screens.forEach(function (s) { groups[s.group || '-'] = 1; });
+    var selIds = Object.keys(SEL).filter(function (k) { return SEL[k]; });
+    var h = '<div class="row"><button class="b p" id="addScreen">+ Scherm</button><span class="muted">' + S.screens.length + ' schermen · ' + S.screens.filter(function (s) { var d = S.devices[s.id]; return d && (S.serverTime - d.lastSeen) < 90000; }).length + ' online</span><span style="flex:1"></span>' +
+      '<b>Selectie (' + selIds.length + '):</b> ' + ['reload|Herladen', 'restart_app|Herstart app', 'reboot|Herstart paneel', 'screen_off|Scherm uit', 'screen_on|Scherm aan', 'touch_unlock|Touch aan', 'touch_lock|Touch uit'].map(function (c) { var p = c.split('|'); return '<button class="b bulk" data-c="' + p[0] + '" data-l="' + p[1] + '">' + p[1] + '</button>'; }).join(' ') + '</div>';
+    h += '<div class="row"><span class="muted">Hele groep:</span><select id="grp" style="width:auto">' + Object.keys(groups).map(function (g) { return '<option>' + esc(g) + '</option>'; }).join('') + '</select>' +
+      ['reload|Herladen', 'restart_app|Herstart app', 'reboot|Herstart paneel'].map(function (c) { var p = c.split('|'); return '<button class="b grpb" data-c="' + p[0] + '" data-l="' + p[1] + '">' + p[1] + '</button>'; }).join(' ') + '</div>';
+    h += '<table><tr><th><input type="checkbox" id="selAll"></th><th>Scherm</th><th>Groep</th><th>Status</th><th>Slides</th><th></th></tr>';
+    S.screens.forEach(function (s) {
+      h += '<tr><td><input type="checkbox" class="sel" data-id="' + esc(s.id) + '"' + (SEL[s.id] ? ' checked' : '') + '></td><td><b>' + esc(s.name) + '</b><br><span class="muted">' + esc(s.id) + '</span></td><td>' + esc(s.group) + '</td><td>' + status(s.id) +
+        (S.pending[s.id] ? ' <span class="pill warn-p">' + S.pending[s.id] + ' wachtend</span>' : '') + '</td><td class="muted">' + (s.slides || []).map(function (x) { return esc(x.kind); }).join(', ') + '</td>' +
+        '<td style="white-space:nowrap"><a class="btn" href="/player/?screen=' + encodeURIComponent(s.id) + '" target="_blank">Voorbeeld</a> <button class="b ed" data-id="' + esc(s.id) + '">Bewerken</button> <button class="b one" data-id="' + esc(s.id) + '" data-c="reload">↻</button></td></tr>';
+    });
+    $('#main').innerHTML = h + '</table>';
+    $('#addScreen').onclick = function () { editScreen(null); };
+    $('#selAll').onchange = function (e) { S.screens.forEach(function (s) { SEL[s.id] = e.target.checked; }); rScreens(); };
+    [].forEach.call(document.querySelectorAll('.sel'), function (c) { c.onchange = function () { SEL[c.dataset.id] = c.checked; rScreens(); }; });
+    [].forEach.call(document.querySelectorAll('.ed'), function (b) { b.onclick = function () { editScreen(b.dataset.id); }; });
+    [].forEach.call(document.querySelectorAll('.one'), function (b) { b.onclick = function () { cmd({ id: b.dataset.id }, b.dataset.c); }; });
+    [].forEach.call(document.querySelectorAll('.bulk'), function (b) { b.onclick = function () { if (!selIds.length) return toast('Selecteer eerst schermen'); selIds.forEach(function (id) { cmd({ id: id }, b.dataset.c, {}, b.dataset.l); }); }; });
+    [].forEach.call(document.querySelectorAll('.grpb'), function (b) { b.onclick = function () { cmd({ group: $('#grp').value }, b.dataset.c, {}, b.dataset.l); }; });
+  }
+
+  var KINDS = { room: 'Kleedkamer (1 ruimte)', overview: 'Overzicht (meerdere ruimtes)', messages: 'Mededelingen (uit Berichten)', clock: 'Klok', weather: 'Weer', text: 'Tekst / huisregels / route' };
+  function slideForm(sl, i) {
+    var h = '<div class="slide" data-i="' + i + '"><div class="row"><select class="k" style="width:auto">' + Object.keys(KINDS).map(function (k) { return '<option value="' + k + '"' + (sl.kind === k ? ' selected' : '') + '>' + KINDS[k] + '</option>'; }).join('') + '</select>' +
+      '<label style="margin:0">duur (s)</label><input class="dur" type="number" min="3" style="width:80px" value="' + (sl.durationSec || 15) + '"><span style="flex:1"></span><button class="b d rm">Verwijder</button></div>';
+    h += '<div class="grid"><div><label>Titel (kop)</label><input class="ti" value="' + esc(sl.title || '') + '"></div>';
+    if (sl.kind === 'room') h += '<div><label>Badge-tekst (leeg = nummer uit titel)</label><input class="bd" value="' + esc(sl.badge || '') + '" placeholder="0.1"></div>';
+    if (sl.kind === 'room' || sl.kind === 'overview') h += '<div><label>Facility-ID\'s (komma)</label><input class="fi" value="' + esc((sl.facilityIds || []).join(',')) + '"></div>';
+    h += '</div>';
+    if (sl.kind === 'text') h += '<label>Kop in beeld</label><input class="hd" value="' + esc(sl.heading || '') + '"><label>Tekst (elke regel = 1 punt bij lijst)</label><textarea class="tx" rows="4">' + esc(sl.text || '') + '</textarea><label><input type="checkbox" class="al"' + (sl.asList ? ' checked' : '') + '> Toon als lijst</label><label>Afbeelding-URL</label><input class="im" value="' + esc(sl.image || '') + '">';
+    return h + '</div>';
+  }
+  function editScreen(id) {
+    var sc = id ? JSON.parse(JSON.stringify(S.screens.filter(function (s) { return s.id === id; })[0])) : { name: '', group: '', slides: [{ kind: 'room', facilityIds: [], durationSec: 30 }], touchMode: 'timed', touchDisableAfterSec: -1, brightness: -1, schedule: { enabled: false, on: '07:00', off: '23:30' }, enabled: true };
+    var d = $('#dlg');
+    function draw() {
+      d.innerHTML = '<h3 style="margin-top:0">' + (id ? 'Scherm bewerken' : 'Nieuw scherm') + '</h3><div class="grid">' +
+        '<div><label>Naam</label><input id="f_name" value="' + esc(sc.name) + '"></div><div><label>Groep</label><input id="f_group" value="' + esc(sc.group) + '"></div>' +
+        '<div><label>Touch-modus</label><select id="f_tm"><option value="timed"' + (sc.touchMode === 'timed' ? ' selected' : '') + '>Na x seconden uitschakelen</option><option value="always"' + (sc.touchMode === 'always' ? ' selected' : '') + '>Altijd aan</option><option value="off"' + (sc.touchMode === 'off' ? ' selected' : '') + '>Altijd uit</option></select></div>' +
+        '<div><label>Touch uit na (s) · -1 = standaard</label><input id="f_td" type="number" value="' + sc.touchDisableAfterSec + '"></div>' +
+        '<div><label>Helderheid % (-1 = systeem)</label><input id="f_br" type="number" min="-1" max="100" value="' + sc.brightness + '"></div></div>' +
+        '<div class="row"><label style="margin:0"><input type="checkbox" id="f_sch"' + (sc.schedule && sc.schedule.enabled ? ' checked' : '') + '> Scherm automatisch aan/uit</label><input id="f_on" type="time" style="width:auto" value="' + esc((sc.schedule || {}).on || '07:00') + '"> tot <input id="f_off" type="time" style="width:auto" value="' + esc((sc.schedule || {}).off || '23:30') + '"></div>' +
+        '<h4>Slides (in volgorde afgespeeld)</h4><div id="slides">' + sc.slides.map(slideForm).join('') + '</div><button class="b" id="addSlide">+ Slide</button>' +
+        '<div class="row" style="margin-top:18px"><button class="b p" id="save">Opslaan</button><button class="b" id="cancel">Annuleren</button><span style="flex:1"></span>' + (id ? '<button class="b d" id="del">Verwijderen</button>' : '') + '</div>';
+      collect = function () {
+        sc.name = $('#f_name', d).value; sc.group = $('#f_group', d).value; sc.touchMode = $('#f_tm', d).value; sc.touchDisableAfterSec = +$('#f_td', d).value; sc.brightness = +$('#f_br', d).value;
+        sc.schedule = { enabled: $('#f_sch', d).checked, on: $('#f_on', d).value, off: $('#f_off', d).value };
+        sc.slides = [].map.call(d.querySelectorAll('.slide'), function (e) {
+          var o = { kind: $('.k', e).value, durationSec: +$('.dur', e).value || 15, title: $('.ti', e).value };
+          if ($('.bd', e)) o.badge = $('.bd', e).value;
+          if ($('.fi', e)) o.facilityIds = $('.fi', e).value.split(',').map(function (x) { return +x.trim(); }).filter(Boolean);
+          if ($('.tx', e)) { o.heading = $('.hd', e).value; o.text = $('.tx', e).value; o.asList = $('.al', e).checked; o.image = $('.im', e).value; }
+          return o;
+        });
+      };
+      d.querySelectorAll('.k').forEach(function (k) { k.onchange = function () { collect(); draw(); }; });
+      d.querySelectorAll('.rm').forEach(function (b) { b.onclick = function () { collect(); sc.slides.splice(+b.closest('.slide').dataset.i, 1); draw(); }; });
+      $('#addSlide', d).onclick = function () { collect(); sc.slides.push({ kind: 'clock', durationSec: 10 }); draw(); };
+      $('#cancel', d).onclick = function () { d.close(); };
+      if (id) $('#del', d).onclick = function () { if (confirm('Scherm verwijderen?')) api('DELETE', '/screens/' + encodeURIComponent(id)).then(function () { d.close(); refresh(); }); };
+      $('#save', d).onclick = function () { collect(); (id ? api('PUT', '/screens/' + encodeURIComponent(id), sc) : api('POST', '/screens', sc)).then(function () { d.close(); toast('Opgeslagen'); refresh(); }).catch(function (e) { toast(e.message); }); };
+    }
+    var collect; draw(); d.showModal();
+  }
+
+  function rMessages() {
+    var h = '<div class="row"><button class="b p" id="addMsg">+ Bericht</button><span class="muted">Berichten verschijnen op schermen met een "Mededelingen"-slide.</span></div><table><tr><th>Titel</th><th>Tekst</th><th>Doel</th><th>Periode</th><th></th></tr>';
+    S.messages.forEach(function (m) {
+      h += '<tr' + (m.enabled === false ? ' style="opacity:.5"' : '') + '><td><b>' + esc(m.title) + '</b></td><td>' + esc((m.text || '').slice(0, 80)) + '</td><td class="muted">' + esc((m.targets || ['*']).join(', ')) + '</td><td class="muted">' + esc((m.from || '…').slice(0, 16)) + ' → ' + esc((m.until || '…').slice(0, 16)) + '</td><td><button class="b em" data-id="' + m.id + '">Bewerken</button></td></tr>';
+    });
+    $('#main').innerHTML = h + '</table>';
+    $('#addMsg').onclick = function () { editMsg(null); };
+    [].forEach.call(document.querySelectorAll('.em'), function (b) { b.onclick = function () { editMsg(b.dataset.id); }; });
+  }
+  function editMsg(id) {
+    var m = id ? S.messages.filter(function (x) { return x.id === id; })[0] : { title: '', text: '', image: '', targets: ['*'], enabled: true, priority: 0 };
+    var d = $('#dlg');
+    d.innerHTML = '<h3 style="margin-top:0">Bericht</h3><label>Titel</label><input id="m_t" value="' + esc(m.title) + '"><label>Tekst</label><textarea id="m_x" rows="4">' + esc(m.text) + '</textarea><label>Afbeelding-URL (optioneel)</label><input id="m_i" value="' + esc(m.image || '') + '">' +
+      '<div class="grid"><div><label>Van (leeg = direct)</label><input type="datetime-local" id="m_f" value="' + esc((m.from || '').slice(0, 16)) + '"></div><div><label>Tot (leeg = onbeperkt)</label><input type="datetime-local" id="m_u" value="' + esc((m.until || '').slice(0, 16)) + '"></div><div><label>Prioriteit</label><input id="m_p" type="number" value="' + (m.priority || 0) + '"></div></div>' +
+      '<label>Doel: * = alles, scherm-ID of group:Groepsnaam (komma)</label><input id="m_g" value="' + esc((m.targets || ['*']).join(',')) + '"><label><input type="checkbox" id="m_e"' + (m.enabled !== false ? ' checked' : '') + '> Actief</label>' +
+      '<div class="row"><button class="b p" id="m_s">Opslaan</button><button class="b" id="m_c">Annuleren</button><span style="flex:1"></span>' + (id ? '<button class="b d" id="m_d">Verwijderen</button>' : '') + '</div>';
+    $('#m_c', d).onclick = function () { d.close(); };
+    if (id) $('#m_d', d).onclick = function () { api('DELETE', '/messages/' + id).then(function () { d.close(); refresh(); }); };
+    $('#m_s', d).onclick = function () {
+      var o = { title: $('#m_t', d).value, text: $('#m_x', d).value, image: $('#m_i', d).value, from: $('#m_f', d).value, until: $('#m_u', d).value, priority: +$('#m_p', d).value, enabled: $('#m_e', d).checked, targets: $('#m_g', d).value.split(',').map(function (x) { return x.trim(); }).filter(Boolean) };
+      (id ? api('PUT', '/messages/' + id, o) : api('POST', '/messages', o)).then(function () { d.close(); toast('Opgeslagen'); refresh(); }).catch(function (e) { toast(e.message); });
+    };
+    d.showModal();
+  }
+
+  function rZones() {
+    var Z = JSON.parse(JSON.stringify(S.settings.zones || []));
+    function draw() {
+      var h = '<div class="card"><b>Zalen en thema\'s</b><p class="muted">Staat dezelfde <b>reserveringsnaam</b> op de zaal-facility én op een kleedkamer, dan krijgt die kleedkamer het thema van de zaal. Bij meerdere treffers wint de bovenste zaal.</p>';
+      Z.forEach(function (z, i) {
+        h += '<div class="slide" data-i="' + i + '"><div class="grid">' +
+          '<div><label>Naam zaal</label><input class="zl" value="' + esc(z.label) + '"></div><div><label>Facility-ID van de zaal</label><input class="zf" type="number" value="' + (z.facilityId || '') + '"></div>' +
+          '<div><label>Achtergrond</label><input class="zbg" type="color" value="' + esc(z.bg || '#501237') + '"></div><div><label>Accentkleur (tekst)</label><input class="zac" type="color" value="' + esc(z.accent || '#ff5000') + '"></div>' +
+          '<div><label>Kopbalk-kleur (leeg = accent)</label><input class="zhb" value="' + esc(z.headerBg || '') + '" placeholder="#rrggbb"></div><div><label>Koptekst-kleur (leeg = achtergrond)</label><input class="zht" value="' + esc(z.headerText || '') + '" placeholder="#rrggbb"></div>' +
+          '<div><label>Logo-URL (optioneel)</label><input class="zlg" value="' + esc(z.logo || '') + '"></div>' +
+          '<div><label>Achtergrondfoto-URL</label><input class="zbi" value="' + esc(z.bgImage || '') + '" placeholder="/media/grotezaal.jpg"></div>' +
+          '<div><label>Foto donker maken: <b class="zdv">' + (z.bgDim == null ? 65 : z.bgDim) + '</b>%</label><input class="zdm" type="range" min="0" max="90" value="' + (z.bgDim == null ? 65 : z.bgDim) + '" oninput="this.previousSibling.querySelector(\'.zdv\').textContent=this.value"></div></div>' +
+          '<div class="row"><label style="margin:0"><input type="checkbox" class="zs"' + (z.showLabel !== false ? ' checked' : '') + '> Zaalnaam in beeld tonen</label><span style="flex:1"></span>' +
+          '<button class="b zu"' + (i === 0 ? ' disabled' : '') + '>↑</button><button class="b d zd">Verwijder</button></div></div>';
+      });
+      h += '<div class="row"><button class="b" id="zadd">+ Zaal</button><button class="b p" id="zsave">Opslaan</button></div></div>';
+      $('#main').innerHTML = h;
+      function collect() { [].forEach.call(document.querySelectorAll('#main .slide'), function (e, i) {
+        Z[i].label = $('.zl', e).value; Z[i].facilityId = +$('.zf', e).value; Z[i].bg = $('.zbg', e).value; Z[i].accent = $('.zac', e).value;
+        Z[i].headerBg = $('.zhb', e).value; Z[i].headerText = $('.zht', e).value; Z[i].logo = $('.zlg', e).value; Z[i].bgImage = $('.zbi', e).value; Z[i].bgDim = +$('.zdm', e).value; Z[i].showLabel = $('.zs', e).checked; }); }
+      $('#zadd').onclick = function () { collect(); Z.push({ label: 'Nieuwe zaal', facilityId: 0, showLabel: true, bg: '#501237', accent: '#ff5000', headerBg: '', headerText: '', logo: '', bgImage: '', bgDim: 65 }); draw(); };
+      [].forEach.call(document.querySelectorAll('.zd'), function (b) { b.onclick = function () { collect(); Z.splice(+b.closest('.slide').dataset.i, 1); draw(); }; });
+      [].forEach.call(document.querySelectorAll('.zu'), function (b) { b.onclick = function () { collect(); var i = +b.closest('.slide').dataset.i; Z.splice(i - 1, 0, Z.splice(i, 1)[0]); draw(); }; });
+      $('#zsave').onclick = function () { collect(); api('PUT', '/settings', { zones: Z }).then(function () { toast('Opgeslagen'); refresh(); }).catch(function (e) { toast(e.message); }); };
+    }
+    draw();
+  }
+
+  var SETFIELDS = [['semUrl', 'SEM API-URL'], ['companyCode', 'Company code'], ['preTime', 'Pre-tijd (min)'], ['postTime', 'Post-tijd (min)'], ['removeAtEndOffset', 'Verwijder na einde (min)'], ['pollSeconds', 'Ophaal-interval SEM (s)'], ['dateOffset', 'Dag-offset'],
+    ['title', 'Standaard kop'], ['footerText', 'Voettekst'], ['roomFallback', 'Tekst kleedkamer vrij'], ['overviewFallback', 'Tekst overzicht leeg'], ['weatherPlace', 'Weer: plaatsnaam'], ['weatherLat', 'Weer: breedtegraad'], ['weatherLon', 'Weer: lengtegraad'],
+    ['badgeStyle', 'Badge-stijl: lines, roof, glass, line, fade, 3d, both of plain'], ['defaultBgImage', 'Standaard achtergrond (kleedkamer zonder zaal)'], ['defaultBgDim', 'Standaard achtergrond donker maken (0-90 %)'], ['ssIdleMinutes', 'Screensaver na (min) zonder reserveringen · 0 = uit'], ['ssPixelShift', 'Pixel-shift (1 = aan, 0 = uit)'], ['defaultTouchDisableAfterSec', 'Touch standaard uit na (s) · 0 = nooit'], ['adminPin', 'Pincode voor beheer-gebaar op paneel']];
+  function rSettings() {
+    $('#main').innerHTML = '<div class="card"><div class="grid">' + SETFIELDS.map(function (f) { return '<div><label>' + f[1] + '</label><input data-k="' + f[0] + '" value="' + esc(S.settings[f[0]]) + '"></div>'; }).join('') + '</div><div class="row"><button class="b p" id="saveSet">Opslaan</button></div></div>';
+    $('#saveSet').onclick = function () {
+      var o = {}; [].forEach.call(document.querySelectorAll('[data-k]'), function (i) { var v = i.value; o[i.dataset.k] = (typeof S.settings[i.dataset.k] === 'number') ? +v : v; });
+      api('PUT', '/settings', o).then(function () { toast('Opgeslagen'); refresh(); }).catch(function (e) { toast(e.message); });
+    };
+  }
+  var PROBE_DEFAULT = 'RecordNumber, ReservationName, WelcomeText, FacilityWelcomeText, FacilityName, FacilityId, FacilityIds, FacilityCode, FacilityDescription, FacilitySequenceNumber, Facilities, FacilityNames, ReservationId, ReservationNumber, StartTime, EndTime, StartDateTime, EndDateTime, ArrivalTime, DepartureTime, Description, Remarks, Comment, CompanyName, Location, LocationName, RoomName, RoomId, Category, Status, Color, Image, ImageUrl, Logo';
+  function rSem() {
+    var bad = S.sem.filter(function (x) { return !x.ok; }).length;
+    var h = '<div class="row"><b>' + S.sem.length + ' facilities</b> · <span class="pill ' + (bad ? 'warn-p' : 'on-p') + '">' + bad + ' met fout</span>' + (S.mock ? ' <span class="pill warn-p">MOCK-DATA</span>' : '') + '<button class="b" id="semRef">Nu verversen</button></div>' +
+      '<div class="card"><b>API-test</b><div class="row"><input id="tf" placeholder="Facility-ID (bijv. 22)" style="width:200px"><button class="b" id="tb">Test ophalen</button></div><pre id="to" style="display:none"></pre></div>' +
+      '<div class="card"><b>Veld-verkenner</b><div class="muted">Probeert veldnamen uit een reservering. Gebruik een facility waar nú een reservering op staat (of vergroot de pre-tijd).</div>' +
+      '<div class="grid"><div><label>Facility-ID(\'s), komma</label><input id="px_f" placeholder="22"></div><div><label>Type</label><input id="px_t" value="ReservationFacility"></div><div><label>Pre-tijd (min)</label><input id="px_p" type="number" value="1440"></div>' +
+      '<div style="grid-column:1/-1"><label>Veldnamen (komma, zonder accolades)</label><textarea id="px_c" rows="3">' + esc(PROBE_DEFAULT) + '</textarea></div></div>' +
+      '<div class="row"><button class="b p" id="px_go">Probeer velden</button><button class="b" id="px_raw">Alleen ruwe respons (eigen template hieronder)</button></div>' +
+      '<label>Eigen template (alleen voor ruwe respons)</label><textarea id="px_h" rows="2"><tr><td>{RecordNumber}</td></tr></textarea><div id="px_o"></div></div>' +
+      '<table><tr><th>Facility</th><th>Status</th><th>Reserveringen</th><th>Laatst opgehaald</th><th>Fout</th></tr>';
+    S.sem.forEach(function (x) { h += '<tr><td>' + x.fid + '</td><td><span class="pill ' + (x.ok ? 'on-p' : 'warn-p') + '">' + (x.ok ? 'ok' : 'fout') + '</span></td><td>' + x.items + '</td><td class="muted">' + ago(x.fetchedAt) + '</td><td class="muted">' + esc(x.error || '') + '</td></tr>'; });
+    $('#main').innerHTML = h + '</table>';
+    function probe(html, cb) {
+      var ids = $('#px_f').value.split(',').map(function (x) { return +x.trim(); }).filter(Boolean);
+      api('POST', '/sem-probe', { facilityIds: ids, type: $('#px_t').value, preTime: +$('#px_p').value, html: html }).then(cb).catch(function (e) { $('#px_o').textContent = e.message; });
+    }
+    $('#px_go').onclick = function () {
+      var names = $('#px_c').value.split(/[,\s]+/).filter(Boolean), o = $('#px_o');
+      var res = {}, done = 0, next = 0, jsonKeys = '', maxRows = 0;
+      o.innerHTML = '<p class="muted">Bezig… elk veld wordt los opgevraagd, omdat SEM een foutpagina geeft bij een onbekende veldnaam (<span id="px_n">0</span>/' + names.length + ')</p>';
+      function work() {
+        if (next >= names.length) return;
+        var nm = names[next++];
+        var html = "<tr class='x'><td class='v'>{" + nm + "}</td></tr>";
+        probe(html, function (r) {
+          if (r.error || !r.json) res[nm] = { err: 'SEM-fout HTTP ' + (r.status || '?') + ' (veld bestaat waarschijnlijk niet)' };
+          else {
+            jsonKeys = Object.keys(r.json).join(', ');
+            var rows = String(r.json.html || '').match(/<tr[\s\S]*?<\/tr>/gi) || [];
+            maxRows = Math.max(maxRows, rows.length);
+            res[nm] = { vals: rows.map(function (row) { var m = row.match(/<td class='v'>([\s\S]*?)<\/td>/); return m ? m[1] : ''; }) };
+          }
+          done++; var c = document.getElementById('px_n'); if (c) c.textContent = done;
+          if (done === names.length) show(); else work();
+        });
+      }
+      for (var w = 0; w < 3; w++) work();
+      function show() {
+        var h = '<p class="muted">Keys in de JSON-respons: ' + esc(jsonKeys) + ' · ' + maxRows + ' reservering(en) gevonden</p>' +
+          '<table><tr><th>Veld</th><th>Waarde per reservering</th></tr>';
+        var order = names.slice().sort(function (a, b) { var f = function (n) { var r = res[n]; return r.err ? 2 : (r.vals.some(function (v) { return v.trim() && v !== '{' + n + '}'; }) ? 0 : 1); }; return f(a) - f(b); });
+        order.forEach(function (nm) {
+          var r = res[nm], cell;
+          if (r.err) cell = '<span class="muted">' + esc(r.err) + '</span>';
+          else if (!r.vals.length) cell = '<span class="muted">geen reservering</span>';
+          else if (r.vals.every(function (v) { return v === '{' + nm + '}'; })) cell = '<span class="muted">onbekend veld (niet ingevuld)</span>';
+          else if (r.vals.every(function (v) { return !v.trim(); })) cell = '<span class="muted">leeg</span>';
+          else cell = '<b>' + r.vals.map(esc).join(' &nbsp;|&nbsp; ') + '</b>';
+          h += '<tr><td>' + esc(nm) + '</td><td>' + cell + '</td></tr>';
+        });
+        $('#px_o').innerHTML = h + '</table>';
+      }
+    };
+    $('#px_raw').onclick = function () { probe($('#px_h').value, function (r) { $('#px_o').innerHTML = '<pre>' + esc(JSON.stringify(r, null, 2)) + '</pre>'; }); };
+    $('#semRef').onclick = function () { api('POST', '/refresh').then(function () { toast('Ververst'); refresh(); }); };
+    $('#tb').onclick = function () {
+      api('POST', '/sem-test', { facilityId: $('#tf').value }).then(function (r) { var o = $('#to'); o.style.display = 'block'; o.textContent = r.ok ? 'Geparsed:\n' + JSON.stringify(r.parsed, null, 2) + '\n\nRuwe HTML van SEM:\n' + r.rawHtml : 'FOUT: ' + r.error; });
+    };
+  }
+
+  if (TOKEN) { api('GET', '/state').then(function (s) { S = s; start(); }).catch(showLogin); } else showLogin();
+})();
+</script>
+</body>
+</html>
