@@ -17,7 +17,7 @@
   .header h2 { color:inherit; margin:0; font-family: headerFont, sans-serif; font-size:6vh; letter-spacing:.5vh; font-weight:700; }
   .body { flex:1; position:relative; overflow:hidden; }
   .slide { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    padding:3vh 4vw; text-align:center; opacity:0; transition:opacity .6s ease; }
+    padding:3vh 4vw; text-align:center; opacity:0; transition:opacity .4s ease; }
   .slide.on { opacity:1; }
   .footer { background:var(--bg); padding:2.4vh 4vw; display:flex; align-items:center; justify-content:space-between; flex:none; border-top:2px solid var(--accent); }
   .footer .msg { font-size:2.5vh; font-weight:500; text-align:left; padding-right:2vw; }
@@ -377,12 +377,15 @@
     var html = renderHtml(sl);
     if (soft && el) { if (el._h !== html) { el._h = html; el.innerHTML = html; if (sl.kind === 'overview') ovStart(el); } return; }
     var n = document.createElement('div'); n.className = 'slide' + ' room-slide'; n.innerHTML = html; n._h = html;
+    // eerst de oude slide(s) volledig laten wegfaden, dan pas de nieuwe tonen: nooit twee slides tegelijk zichtbaar
+    var olds = $('body').querySelectorAll('.slide');
+    for (var i = 0; i < olds.length; i++) (function (o) { o.classList.remove('on'); setTimeout(function () { if (o.parentNode) o.parentNode.removeChild(o); }, 450); })(olds[i]);
     $('body').appendChild(n);
-    $('title').textContent = headerFor(sl) || ' ';
-    requestAnimationFrame(function () { requestAnimationFrame(function () {
+    $('title').textContent = headerFor(sl) || ' ';
+    setTimeout(function () {
+      if (!n.parentNode) return;
       n.classList.add('on'); if (sl.kind === 'overview') setTimeout(function () { ovStart(n); }, 900);
-      if (el) { el.classList.remove('on'); setTimeout(function () { el.remove(); }, 800); }
-    }); });
+    }, olds.length ? 480 : 40);
   }
   function next() {
     clearTimeout(timer);
