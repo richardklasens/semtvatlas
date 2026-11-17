@@ -241,8 +241,25 @@
   var SETFIELDS = [['semUrl', 'SEM API-URL'], ['companyCode', 'Company code'], ['preTime', 'Pre-tijd (min)'], ['postTime', 'Post-tijd (min)'], ['removeAtEndOffset', 'Verwijder na einde (min)'], ['pollSeconds', 'Ophaal-interval SEM (s)'], ['dateOffset', 'Dag-offset'],
     ['title', 'Standaard kop'], ['footerText', 'Voettekst'], ['roomFallback', 'Tekst kleedkamer vrij'], ['overviewFallback', 'Tekst overzicht leeg'], ['weatherPlace', 'Weer: plaatsnaam'], ['weatherLat', 'Weer: breedtegraad'], ['weatherLon', 'Weer: lengtegraad'],
     ['badgeStyle', 'Badge-stijl: lines, roof, glass, line, fade, 3d, both of plain'], ['defaultBgImage', 'Standaard achtergrond (kleedkamer zonder zaal)'], ['defaultBgDim', 'Standaard achtergrond donker maken (0-90 %)'], ['ssIdleMinutes', 'Screensaver na (min) zonder reserveringen · 0 = uit'], ['ssPixelShift', 'Pixel-shift (1 = aan, 0 = uit)'], ['defaultTouchDisableAfterSec', 'Touch standaard uit na (s) · 0 = nooit'], ['adminPin', 'Pincode voor beheer-gebaar op paneel']];
+  function apkCard() {
+    var a = S.apk || {}, url = location.origin + '/downloads/app-release.apk';
+    return '<div class="card"><h3 style="margin-top:0">Android-app</h3><p>' + (a.exists
+      ? 'Beschikbaar (' + (a.size / 1048576).toFixed(1) + ' MB, ' + new Date(a.mtime).toLocaleString('nl-NL') + '). Open op het paneel in de browser: <b>' + esc(url) + '</b> en installeer de apk.'
+      : 'Nog geen apk geüpload.') + '</p><div class="row"><input type="file" id="apkFile" accept=".apk"><button class="b p" id="apkUp">Uploaden</button></div></div>';
+  }
+  function bindApk() {
+    var b = $('#apkUp'); if (!b) return;
+    b.onclick = function () {
+      var f = $('#apkFile').files[0]; if (!f) return toast('Kies eerst een .apk-bestand');
+      toast('Uploaden…');
+      fetch('/api/admin/apk', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/octet-stream' }, body: f })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+        .then(function () { toast('✓ App geüpload'); refresh(); }).catch(function (e) { toast(e.message); });
+    };
+  }
   function rSettings() {
-    $('#main').innerHTML = '<div class="card"><div class="grid">' + SETFIELDS.map(function (f) { return '<div><label>' + f[1] + '</label><input data-k="' + f[0] + '" value="' + esc(S.settings[f[0]]) + '"></div>'; }).join('') + '</div><div class="row"><button class="b p" id="saveSet">Opslaan</button></div></div>';
+    $('#main').innerHTML = '<div class="card"><div class="grid">' + SETFIELDS.map(function (f) { return '<div><label>' + f[1] + '</label><input data-k="' + f[0] + '" value="' + esc(S.settings[f[0]]) + '"></div>'; }).join('') + '</div><div class="row"><button class="b p" id="saveSet">Opslaan</button></div></div>' + apkCard();
+    bindApk();
     $('#saveSet').onclick = function () {
       var o = {}; [].forEach.call(document.querySelectorAll('[data-k]'), function (i) { var v = i.value; o[i.dataset.k] = (typeof S.settings[i.dataset.k] === 'number') ? +v : v; });
       api('PUT', '/settings', o).then(function () { toast('Opgeslagen'); refresh(); }).catch(function (e) { toast(e.message); });

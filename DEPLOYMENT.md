@@ -48,8 +48,9 @@ Lokaal: `ADMIN_PASSWORD=geheim docker compose up -d --build`.
 
 ## 4. APK beschikbaar maken (optioneel)
 
-Kopieer de gebouwde `app-release.apk` naar het volume in `/data/downloads/`; hij is dan bereikbaar op
-`http://<server>:8080/downloads/app-release.apk` (handig om panels zonder USB te installeren).
+Open het beheerportaal → **Instellingen → Android-app** en upload de gebouwde apk (te downloaden via GitHub → Actions → Artifacts).
+De server bewaart hem in het data-volume en serveert hem op `http://<server>:<poort>/downloads/app-release.apk`; open dat adres in de
+browser van het paneel om te installeren (geen USB nodig, alleen "installeren uit onbekende bronnen" toestaan).
 
 ## Beveiliging
 

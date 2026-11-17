@@ -312,6 +312,9 @@ function deviceConfigFor(screen) {
 
 // bevestigingen van schermen: commando-id -> tijdstip waarop het scherm meldde dat het is uitgevoerd
 const cmdDone = {};
+function apkInfo() {
+  try { const st = fs.statSync(path.join(DATA_DIR, 'downloads', 'app-release.apk')); return { exists: true, size: st.size, mtime: st.mtimeMs }; } catch (e) { return { exists: false }; }
+}
 function queueCommand(screenId, type, params) {
   const list = db.commands[screenId] = db.commands[screenId] || [];
   // dubbele identieke commando's niet opstapelen
@@ -386,8 +389,20 @@ async function handleApi(req, res, url) {
         settings: db.settings, screens: db.screens, messages: db.messages,
         devices: db.devices, pending: Object.fromEntries(Object.entries(db.commands).map(([k, v]) => [k, v.length])),
         sem: [...semCache.entries()].map(([fid, c]) => ({ fid, ok: c.ok, error: c.error, items: c.items.length, fetchedAt: c.fetchedAt })),
-        mock: SEM_MOCK, serverTime: Date.now()
+        mock: SEM_MOCK, serverTime: Date.now(), apk: apkInfo()
       });
+    }
+    if (p === '/api/admin/apk' && m === 'POST') {
+      // de Android-app (apk) uploaden; daarna te downloaden op /downloads/app-release.apk
+      const dir = path.join(DATA_DIR, 'downloads'); fs.mkdirSync(dir, { recursive: true });
+      const tmp = path.join(dir, '.upload.tmp'), out = fs.createWriteStream(tmp); let size = 0, bad = false;
+      await new Promise((resolve) => {
+        req.on('data', c => { size += c.length; if (size > 150e6 && !bad) { bad = true; req.destroy(); out.destroy(); resolve(); } });
+        req.pipe(out); out.on('finish', resolve); out.on('error', resolve); req.on('error', resolve);
+      });
+      if (bad || size < 1000) { try { fs.unlinkSync(tmp); } catch (e) {} return send(res, 400, { error: bad ? 'bestand te groot (max 150 MB)' : 'leeg bestand' }); }
+      fs.renameSync(tmp, path.join(dir, 'app-release.apk'));
+      return send(res, 200, apkInfo());
     }
     if (p === '/api/admin/settings' && m === 'PUT') {
       const b = await readBody(req);
