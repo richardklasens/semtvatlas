@@ -26,7 +26,7 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 /* ------------------------------------------------------------------ opslag */
 const DEFAULT_DB = {
   settings: {
-    semUrl: 'https://wildlands.smarteventmanager.nl/api/pages',
+    semUrl: process.env.SEM_URL || '',   // verplicht: instellen via de omgevingsvariabele SEM_URL (of in het portaal)
     companyCode: 'ATL',
     preTime: 300,
     postTime: 0,
@@ -151,15 +151,17 @@ function parseSemHtml(html) {
   return out;
 }
 
+const semBase = () => db.settings.semUrl || process.env.SEM_URL || '';
 async function fetchFacility(fid) {
   const s = db.settings;
   if (SEM_MOCK) return mockFacility(fid);
+  if (!semBase()) throw new Error('SEM-adres niet ingesteld: zet de omgevingsvariabele SEM_URL of vul het in bij Instellingen');
   const body = JSON.stringify({
     Type: 'ReservationFacility', Html: SEM_TEMPLATE, CompanyCode: s.companyCode, DateOffset: s.dateOffset,
     ShowFirstOnly: false, PreTime: s.preTime, PostTime: s.postTime, RemoveAtEndOffset: s.removeAtEndOffset,
     FacilitySequenceNumber: false, FacilityIds: [fid]
   });
-  const url = s.semUrl.replace(/\/$/, '') + '/ReservationFacility?jsonTemplate=' + encodeURIComponent(body);
+  const url = semBase().replace(/\/$/, '') + '/ReservationFacility?jsonTemplate=' + encodeURIComponent(body);
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
   try {
     const res = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json' } });
@@ -479,7 +481,7 @@ async function handleApi(req, res, url) {
       });
       if (SEM_MOCK) return send(res, 200, { ok: true, mock: true, json: { html: '(mock-modus: geen echte SEM-aanroep)' } });
       try {
-        const url = st.semUrl.replace(/\/$/, '') + '/' + type + '?jsonTemplate=' + encodeURIComponent(body);
+        const url = semBase().replace(/\/$/, '') + '/' + type + '?jsonTemplate=' + encodeURIComponent(body);
         const r = await fetch(url, { signal: AbortSignal.timeout(15000), redirect: 'manual' });
         const text = await r.text(); let json = null; try { json = JSON.parse(text); } catch (e) {}
         return send(res, 200, { ok: r.ok, status: r.status, urlLength: url.length, location: r.headers.get('location') || undefined,
@@ -514,6 +516,7 @@ function serveStatic(req, res, url) {
     if (err) return send(res, 404, 'Niet gevonden');
     const cache = /\.(woff|otf|png|jpg|svg)$/.test(file) ? 'public, max-age=86400' : 'no-cache';
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': cache });
+    if (file.endsWith('.html') && buf.includes('{{SEM_URL}}')) return res.end(buf.toString().split('{{SEM_URL}}').join(semBase()));
     res.end(buf);
   });
 }

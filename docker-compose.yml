@@ -9,6 +9,7 @@ services:
       # Verander deze waarden vóór de eerste start!
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-verander-mij}"
       DEVICE_KEY: "${DEVICE_KEY:-}"          # optioneel: gedeelde sleutel die de Android-apps meesturen
+      SEM_URL: "${SEM_URL:-}"                # adres van de SEM-API, bijv. https://<jouw-omgeving>.smarteventmanager.nl/api/pages
       SEM_MOCK: "${SEM_MOCK:-0}"             # 1 = testdata zonder SEM-verbinding
       TZ: Europe/Amsterdam
     volumes:

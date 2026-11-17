@@ -13,6 +13,7 @@ staan in het volume `/data` (`db.json`) – maak daar een backup van.
    | `ADMIN_PASSWORD` | wachtwoord voor het beheerportaal (**verplicht aanpassen**) |
    | `PORT` | optioneel; poort op de server (standaard 8080). Kies een andere als 8080 al bezet is |
    | `DEVICE_KEY` | optioneel; als ingevuld moeten de Android-apps dezelfde sleutel meesturen |
+   | `SEM_URL` | **verplicht**: adres van de SEM-API, bijv. `https://<omgeving>.smarteventmanager.nl/api/pages` |
    | `SEM_MOCK` | `1` = testdata zonder SEM-verbinding (handig om eerst alles uit te proberen) |
 4. Deploy. Open `http://<server>:8080/admin/`.
 
