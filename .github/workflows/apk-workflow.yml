@@ -2,7 +2,7 @@ name: Bouw Android-app (apk)
 
 on:
   push:
-    paths: ['android/**', '.github/workflows/apk.yml']
+    paths: ['android/**', '.github/workflows/apk-workflow.yml']
   workflow_dispatch: {}
 
 jobs:
@@ -12,12 +12,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
-      - uses: android-actions/setup-android@v3
+      # De Android SDK staat al op de GitHub-runner (ANDROID_HOME); alleen de licenties accepteren.
+      - name: Accepteer SDK-licenties
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.7' }
       - name: Bouw debug-apk
         working-directory: android
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: semtvatlas-apk
