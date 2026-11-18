@@ -314,15 +314,32 @@ function deviceConfigFor(screen) {
 
 // bevestigingen van schermen: commando-id -> tijdstip waarop het scherm meldde dat het is uitgevoerd
 const cmdDone = {};
+const cmdExpired = {};   // commando-id -> tijdstip waarop het verliep (niet opgepakt binnen de tijd)
+const cmdMeta = {};      // commando-id -> { screen, type }
+const lastDone = {};     // scherm-id -> { type, at }: laatst bevestigde commando
+const COMMAND_TTL = Number(process.env.COMMAND_TTL_MS) || 60000; // een commando dat na 1 minuut niet is opgepakt, wordt gestopt
+function pruneCommands() {
+  const now = Date.now(); let changed = false;
+  for (const id of Object.keys(db.commands)) {
+    if (!db.screens.some(sc => sc.id === id)) { delete db.commands[id]; changed = true; continue; }
+    const keep = db.commands[id].filter(c => { const ok = now - c.created < COMMAND_TTL; if (!ok) { cmdExpired[c.id] = now; changed = true; } return ok; });
+    if (keep.length !== db.commands[id].length) db.commands[id] = keep;
+  }
+  for (const k of Object.keys(cmdExpired)) if (now - cmdExpired[k] > 3600000) { delete cmdExpired[k]; delete cmdMeta[k]; }
+  if (changed) saveDb();
+}
+setInterval(pruneCommands, 10000);
 function apkInfo() {
   try { const st = fs.statSync(path.join(DATA_DIR, 'downloads', 'app-release.apk')); return { exists: true, size: st.size, mtime: st.mtimeMs }; } catch (e) { return { exists: false }; }
 }
 function queueCommand(screenId, type, params) {
+  pruneCommands();
   const list = db.commands[screenId] = db.commands[screenId] || [];
   // dubbele identieke commando's niet opstapelen
   const same = list.find(c => c.type === type && JSON.stringify(c.params || {}) === JSON.stringify(params || {}));
   if (same) return same;
   const cmd = { id: uid(), type, params: params || {}, created: Date.now() };
+  cmdMeta[cmd.id] = { screen: screenId, type };
   list.push(cmd); saveDb(); return cmd;
 }
 
@@ -364,10 +381,10 @@ async function handleApi(req, res, url) {
     const sc = screenById(id);
     if (!sc) return send(res, 404, { error: 'onbekend scherm' });
     const body = await readBody(req);
-    (body.ackIds || []).forEach(a => { cmdDone[a] = Date.now(); db.commands[id] = (db.commands[id] || []).filter(c => c.id !== a); });
+    (body.ackIds || []).forEach(a => { cmdDone[a] = Date.now(); if (cmdMeta[a]) lastDone[id] = { type: cmdMeta[a].type, at: Date.now() }; db.commands[id] = (db.commands[id] || []).filter(c => c.id !== a); });
     Object.keys(cmdDone).forEach(k => { if (Date.now() - cmdDone[k] > 3600000) delete cmdDone[k]; });
     db.devices[id] = Object.assign({}, body, { ackIds: undefined, lastSeen: Date.now(), ip: (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString() });
-    saveDb();
+    pruneCommands(); saveDb();
     return send(res, 200, { commands: db.commands[id] || [], config: deviceConfigFor(sc), serverTime: Date.now() });
   }
   mt = p.match(/^\/api\/device\/([^/]+)\/config$/);
@@ -387,11 +404,12 @@ async function handleApi(req, res, url) {
     if (!isAdmin(req)) return send(res, 401, { error: 'Niet ingelogd' });
 
     if (p === '/api/admin/state' && m === 'GET') {
+      pruneCommands();
       return send(res, 200, {
         settings: db.settings, screens: db.screens, messages: db.messages,
         devices: db.devices, pending: Object.fromEntries(Object.entries(db.commands).map(([k, v]) => [k, v.length])),
         sem: [...semCache.entries()].map(([fid, c]) => ({ fid, ok: c.ok, error: c.error, items: c.items.length, fetchedAt: c.fetchedAt })),
-        mock: SEM_MOCK, serverTime: Date.now(), apk: apkInfo()
+        mock: SEM_MOCK, serverTime: Date.now(), apk: apkInfo(), lastDone
       });
     }
     if (p === '/api/admin/apk' && m === 'POST') {
@@ -440,7 +458,8 @@ async function handleApi(req, res, url) {
     mt = p.match(/^\/api\/admin\/commands\/([^/]+)$/);
     if (mt && m === 'GET') {
       const cid = decodeURIComponent(mt[1]);
-      return send(res, 200, { done: !!cmdDone[cid], at: cmdDone[cid] || null });
+      pruneCommands();
+      return send(res, 200, { done: !!cmdDone[cid], expired: !cmdDone[cid] && !!cmdExpired[cid], at: cmdDone[cid] || null });
     }
     mt = p.match(/^\/api\/admin\/screens\/([^/]+)\/command$/);
     if (mt && m === 'POST') {

@@ -74,10 +74,11 @@
       tries++;
       api('GET', '/commands/' + encodeURIComponent(cmdId)).then(function (r) {
         if (r.done) { clearInterval(iv); toast('✓ "' + name + '" heeft het herladen uitgevoerd'); refresh(); }
-        else if (tries >= 20) { clearInterval(iv); toast('"' + name + '" heeft nog niet bevestigd — offline? Het herladen volgt zodra het scherm online is'); }
+        else if (r.expired || tries >= 32) { clearInterval(iv); toast('"' + name + '" heeft het herladen niet opgepakt binnen 1 minuut (offline?) — commando gestopt'); refresh(); }
       }).catch(function () {});
     }, 2000);
   }
+  var CMDNAME = { reload: 'Herladen', restart_app: 'Herstart app', reboot: 'Herstart paneel', screen_off: 'Scherm uit', screen_on: 'Scherm aan', touch_unlock: 'Touch aan', touch_lock: 'Touch uit', clear_cache: 'Cache wissen', set_brightness: 'Helderheid' };
   function toast(t) { var e = $('#toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(function () { e.style.display = 'none'; }, 4000); }
 
   function api(method, path, body) {
@@ -109,7 +110,7 @@
   function cmd(target, type, params, label) {
     if ((type === 'reboot') && !confirm('Paneel(en) herstarten?')) return;
     var body = Object.assign({ type: type, params: params || {} }, target.group ? { group: target.group } : {});
-    api('POST', '/screens/' + (target.group ? '_group' : target.id) + '/command', body).then(function (r) { toast((label || type) + ' verstuurd naar ' + r.queued + ' scherm(en)'); refresh(); }).catch(function (e) { toast(e.message); });
+    api('POST', '/screens/' + (target.group ? '_group' : target.id) + '/command', body).then(function (r) { toast((label || type) + ' verstuurd naar ' + r.queued + ' scherm(en)'); refresh(); [3000, 10000, 25000, 45000, 65000].forEach(function (ms) { setTimeout(refresh, ms); }); }).catch(function (e) { toast(e.message); });
   }
 
   /* ------------------------------------------------ tabs */
@@ -128,7 +129,7 @@
     h += '<table><tr><th><input type="checkbox" id="selAll"></th><th>Scherm</th><th>Groep</th><th>Status</th><th>Slides</th><th></th></tr>';
     S.screens.forEach(function (s) {
       h += '<tr><td><input type="checkbox" class="sel" data-id="' + esc(s.id) + '"' + (SEL[s.id] ? ' checked' : '') + '></td><td><b>' + esc(s.name) + '</b><br><span class="muted">' + esc(s.id) + '</span></td><td>' + esc(s.group) + '</td><td>' + status(s.id) +
-        (S.pending[s.id] ? ' <span class="pill warn-p">' + S.pending[s.id] + ' wachtend</span>' : '') + '</td><td class="muted">' + (s.slides || []).map(function (x) { return esc(x.kind); }).join(', ') + '</td>' +
+        (S.pending[s.id] ? ' <span class="pill warn-p">' + S.pending[s.id] + ' wachtend</span>' : '') + ((S.lastDone || {})[s.id] ? '<br><span class="muted">✓ ' + esc(CMDNAME[S.lastDone[s.id].type] || S.lastDone[s.id].type) + ' uitgevoerd ' + new Date(S.lastDone[s.id].at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '</span>' : '') + '</td><td class="muted">' + (s.slides || []).map(function (x) { return esc(x.kind); }).join(', ') + '</td>' +
         '<td style="white-space:nowrap"><a class="btn" href="/player/?screen=' + encodeURIComponent(s.id) + '" target="_blank">Voorbeeld</a> <button class="b ed" data-id="' + esc(s.id) + '">Bewerken</button> <button class="b one" data-id="' + esc(s.id) + '" data-c="reload">↻</button></td></tr>';
     });
     $('#main').innerHTML = h + '</table>';
