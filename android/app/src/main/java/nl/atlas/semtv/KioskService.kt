@@ -101,7 +101,7 @@ class KioskService : Service() {
             .put("kind", "app")
             .put("appVersion", packageManager.getPackageInfo(packageName, 0).versionName)
             .put("battery", if (level >= 0) level * 100 / scale else -1)
-            .put("screenOn", pm.isInteractive)
+            .put("screenOn", pm.isInteractive && !KioskState.softOff)
             .put("touchLocked", KioskState.touchLocked)
             .put("deviceOwner", AdminReceiver.isDeviceOwner(this))
             .put("activityAlive", KioskState.activity != null)
@@ -156,19 +156,21 @@ class KioskService : Service() {
     }
 
     private fun screenOff() {
+        KioskState.onUi { it.setScreenOff(true) }
+        // met Device Owner / apparaatbeheerder het scherm daarna ook echt vergrendelen
         if (AdminReceiver.isDeviceOwner(this) || AdminReceiver.dpm(this).isAdminActive(AdminReceiver.component(this))) {
-            try { AdminReceiver.dpm(this).lockNow() } catch (e: Exception) { KioskState.lastResult = "screen_off: ${e.message}" }
-        } else KioskState.lastResult = "screen_off niet mogelijk: app is geen device admin"
+            KioskState.main.postDelayed({
+                try { AdminReceiver.dpm(this).lockNow() } catch (e: Exception) { KioskState.lastResult = "screen_off: ${e.message}" }
+            }, 800)
+        }
     }
 
     @Suppress("DEPRECATION")
     private fun screenOn() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         pm.newWakeLock(PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE, "semtv:wake").acquire(5000)
-        KioskState.onUi { it.reload() } || try {
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            true
-        } catch (_: Exception) { false }
+        val ok = KioskState.onUi { it.setScreenOff(false) }
+        if (!ok) try { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
     }
 
     private fun restartApp() {

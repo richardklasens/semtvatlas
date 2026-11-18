@@ -11,6 +11,7 @@ object KioskState {
     @Volatile var activity: MainActivity? = null
     @Volatile var touchLocked: Boolean = false
     @Volatile var screenOn: Boolean = true
+    @Volatile var softOff: Boolean = false   // zwart scherm + minimale helderheid (werkt ook zonder Device Owner)
     @Volatile var lastResult: String = ""
     val main = Handler(Looper.getMainLooper())
 

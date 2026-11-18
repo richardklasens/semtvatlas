@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Color
 import android.os.Bundle
+import android.view.Gravity
+import android.os.Build
 import android.provider.Settings
 import android.text.InputType
 import android.view.MotionEvent
@@ -41,6 +43,7 @@ class MainActivity : Activity() {
             val sec = prefs.touchDisableAfterSec
             if (prefs.touchMode == "timed" && sec > 0 && !guard.locked &&
                 System.currentTimeMillis() - lastTouch >= sec * 1000L) setLocked(true)
+            hideSystemUi()
             KioskState.main.postDelayed(this, 1000)
         }
     }
@@ -55,7 +58,14 @@ class MainActivity : Activity() {
         guard = TouchGuardView(this) { askPin() }
         buildWebView()
         root.addView(guard, FrameLayout.LayoutParams(-1, -1))
+        // zwarte laag voor 'scherm uit' zonder Device Owner; vangt ook alle aanraking af
+        offView = View(this).apply { setBackgroundColor(Color.BLACK); visibility = View.GONE; isClickable = true; isFocusable = false }
+        root.addView(offView, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
+        // de systeembalken meteen weer weg als ze door een veeg verschijnen
+        window.decorView.setOnSystemUiVisibilityChangeListener { vis ->
+            if (vis and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0) KioskState.main.postDelayed({ hideSystemUi() }, 250)
+        }
 
         KioskState.activity = this
         setupKiosk()
@@ -114,6 +124,7 @@ class MainActivity : Activity() {
         val dpm = AdminReceiver.dpm(this); val admin = AdminReceiver.component(this)
         try {
             dpm.setLockTaskPackages(admin, arrayOf(packageName))
+            if (Build.VERSION.SDK_INT >= 28) dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
             dpm.setKeyguardDisabled(admin, true)
             dpm.setStatusBarDisabled(admin, true)
             dpm.setGlobalSetting(admin, Settings.Global.STAY_ON_WHILE_PLUGGED_IN, "7")
@@ -126,12 +137,46 @@ class MainActivity : Activity() {
     }
 
     @Suppress("DEPRECATION")
+    private var offView: View? = null
+    private var edge: View? = null
+
     private fun hideSystemUi() {
         window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
             View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_FULLSCREEN or
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
     }
     override fun onWindowFocusChanged(hasFocus: Boolean) { super.onWindowFocusChanged(hasFocus); if (hasFocus) hideSystemUi() }
+
+    override fun onResume() { super.onResume(); addEdgeBlocker() }
+    override fun onPause() { removeEdgeBlocker(); super.onPause() }
+
+    /** Onzichtbare strook onderaan (boven de Android-knoppenbalk) die aanraking opvangt, zodat een veeg de balk niet bruikbaar maakt.
+     *  Vereist 'Weergeven over andere apps' (adb shell appops set nl.atlas.semtv SYSTEM_ALERT_WINDOW allow). Laat de linkeronderhoek vrij voor het beheergebaar. */
+    private fun addEdgeBlocker() {
+        if (edge != null || Build.VERSION.SDK_INT < 26 || !Settings.canDrawOverlays(this)) return
+        try {
+            val dm = resources.displayMetrics
+            val v = View(this).apply { setBackgroundColor(Color.TRANSPARENT); isClickable = true }
+            val lp = WindowManager.LayoutParams((dm.widthPixels * 0.8f).toInt(), (72 * dm.density).toInt(),
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                android.graphics.PixelFormat.TRANSLUCENT).apply { gravity = Gravity.BOTTOM or Gravity.END }
+            (getSystemService(WINDOW_SERVICE) as WindowManager).addView(v, lp); edge = v
+        } catch (e: Exception) { KioskState.lastResult = "edge-blocker: ${e.message}" }
+    }
+    private fun removeEdgeBlocker() {
+        edge?.let { try { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it) } catch (_: Exception) {} }; edge = null
+    }
+
+    /** Scherm 'uit': zwart + minimale helderheid. Werkt op elk paneel; met Device Owner/-beheerder zet de service het scherm daarna ook echt uit. */
+    fun setScreenOff(off: Boolean) {
+        KioskState.softOff = off
+        offView?.visibility = if (off) View.VISIBLE else View.GONE
+        val lp = window.attributes
+        lp.screenBrightness = if (off) 0f else (if (prefs.brightness < 0) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE else prefs.brightness.coerceIn(1, 100) / 100f)
+        window.attributes = lp
+        if (!off) reload()
+    }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (!guard.locked) lastTouch = System.currentTimeMillis()
@@ -184,13 +229,15 @@ class MainActivity : Activity() {
     }
 
     private fun adminMenu() {
-        val items = arrayOf("Touch weer aanzetten", "Pagina herladen", "Instellingen (server/scherm-ID)", "Kiosk verlaten")
+        val items = arrayOf("Touch weer aanzetten", "Pagina herladen", "Instellingen (server/scherm-ID)", "Kiosk verlaten", "Apparaatbeheerder activeren (scherm echt uitzetten)")
         AlertDialog.Builder(this).setTitle("Beheer").setItems(items) { _, which ->
             when (which) {
                 0 -> setLocked(false)
                 1 -> reload()
                 2 -> startActivityForResult(Intent(this, SetupActivity::class.java), 1)
                 3 -> { try { stopLockTask() } catch (_: Exception) {}; finish() }
+                4 -> startActivity(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                    .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, AdminReceiver.component(this)))
             }
         }.show()
     }
