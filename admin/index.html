@@ -96,7 +96,7 @@
 
   function start() { $('#login').style.display = 'none'; $('#shell').style.display = 'block'; refresh(); }
   function refresh() { return api('GET', '/state').then(function (s) { S = s; render(); }).catch(function () {}); }
-  setInterval(function () { if (TOKEN && !$('#dlg').open && TAB === 'screens' && !document.activeElement.closest('#main input, #main textarea, #main select')) refresh(); }, 10000);
+  setInterval(function () { if (TOKEN && !$('#dlg').open && TAB === 'screens' && !document.activeElement.closest('#main input, #main textarea, #main select')) refresh(); }, 5000);
 
   /* ------------------------------------------------ helpers */
   function ago(ts) { if (!ts) return 'nooit'; var s = Math.round((S.serverTime - ts) / 1000); if (s < 60) return s + ' s'; if (s < 3600) return Math.round(s / 60) + ' min'; return Math.round(s / 3600) + ' u'; }

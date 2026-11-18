@@ -130,13 +130,12 @@ class KioskService : Service() {
         for (i in 0 until cmds.length()) {
             val c = cmds.getJSONObject(i)
             val id = c.getString("id"); val type = c.getString("type"); val params = c.optJSONObject("params") ?: JSONObject()
-            if (type == "reboot" || type == "restart_app") {
-                // eerst bevestigen, anders voert het paneel het commando na de herstart nogmaals uit
-                Api.post(url, payload(listOf(id)), prefs.deviceKey)
-                execute(type, params); return
-            }
+            // Eerst bevestigen, dan uitvoeren: bij scherm uit / herstart kan de verbinding daarna wegvallen
+            // en dan zou het portaal blijven wachten. Mislukt de bevestiging, dan gaat hij mee met de volgende heartbeat.
+            val acked = Api.post(url, payload(listOf(id)), prefs.deviceKey) != null
+            if (!acked) synchronized(pendingAck) { pendingAck.add(id) }
             execute(type, params)
-            synchronized(pendingAck) { pendingAck.add(id) }
+            if (type == "reboot" || type == "restart_app") return
         }
     }
 
