@@ -104,6 +104,7 @@ class KioskService : Service() {
             .put("screenOn", pm.isInteractive && !KioskState.softOff)
             .put("touchLocked", KioskState.touchLocked)
             .put("deviceOwner", AdminReceiver.isDeviceOwner(this))
+            .put("overlayGranted", Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this))
             .put("activityAlive", KioskState.activity != null)
             .put("lastResult", KioskState.lastResult)
             .put("localIp", "${ipInt and 0xff}.${ipInt shr 8 and 0xff}.${ipInt shr 16 and 0xff}.${ipInt shr 24 and 0xff}")

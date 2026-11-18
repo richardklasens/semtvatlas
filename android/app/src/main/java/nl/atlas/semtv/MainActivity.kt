@@ -139,6 +139,7 @@ class MainActivity : Activity() {
     @Suppress("DEPRECATION")
     private var offView: View? = null
     private var edge: View? = null
+    private var edgeTop: View? = null
 
     private fun hideSystemUi() {
         window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
@@ -156,16 +157,32 @@ class MainActivity : Activity() {
         if (edge != null || Build.VERSION.SDK_INT < 26 || !Settings.canDrawOverlays(this)) return
         try {
             val dm = resources.displayMetrics
-            val v = View(this).apply { setBackgroundColor(Color.TRANSPARENT); isClickable = true }
-            val lp = WindowManager.LayoutParams((dm.widthPixels * 0.8f).toInt(), (72 * dm.density).toInt(),
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                android.graphics.PixelFormat.TRANSLUCENT).apply { gravity = Gravity.BOTTOM or Gravity.END }
-            (getSystemService(WINDOW_SERVICE) as WindowManager).addView(v, lp); edge = v
+            val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+            fun strip(h: Int, gravity: Int, adminCorner: Boolean): View {
+                val v = object : View(this) {
+                    private var pending = false
+                    private val trig = Runnable { pending = false; askPin() }
+                    override fun onTouchEvent(ev: MotionEvent): Boolean {
+                        val inCorner = adminCorner && ev.x < width * 0.15f
+                        when (ev.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> if (inCorner) { pending = true; postDelayed(trig, 3000) }
+                            MotionEvent.ACTION_MOVE -> if (pending && !inCorner) { removeCallbacks(trig); pending = false }
+                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (pending) { removeCallbacks(trig); pending = false }
+                        }
+                        return true
+                    }
+                }.apply { setBackgroundColor(Color.TRANSPARENT) }
+                val lp = WindowManager.LayoutParams(dm.widthPixels, h, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    android.graphics.PixelFormat.TRANSLUCENT).apply { this.gravity = gravity }
+                wm.addView(v, lp); return v
+            }
+            edge = strip((110 * dm.density).toInt(), Gravity.BOTTOM, true)
+            edgeTop = strip((36 * dm.density).toInt(), Gravity.TOP, false)
         } catch (e: Exception) { KioskState.lastResult = "edge-blocker: ${e.message}" }
     }
     private fun removeEdgeBlocker() {
-        edge?.let { try { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it) } catch (_: Exception) {} }; edge = null
+        for (v in listOf(edge, edgeTop)) v?.let { try { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it) } catch (_: Exception) {} }; edge = null; edgeTop = null
     }
 
     /** Scherm 'uit': zwart + minimale helderheid. Werkt op elk paneel; met Device Owner/-beheerder zet de service het scherm daarna ook echt uit. */
@@ -229,7 +246,7 @@ class MainActivity : Activity() {
     }
 
     private fun adminMenu() {
-        val items = arrayOf("Touch weer aanzetten", "Pagina herladen", "Instellingen (server/scherm-ID)", "Kiosk verlaten", "Apparaatbeheerder activeren (scherm echt uitzetten)")
+        val items = arrayOf("Touch weer aanzetten", "Pagina herladen", "Instellingen (server/scherm-ID)", "Kiosk verlaten", "Apparaatbeheerder activeren (scherm echt uitzetten)", "Veegblokkade toestaan (Weergeven over andere apps)")
         AlertDialog.Builder(this).setTitle("Beheer").setItems(items) { _, which ->
             when (which) {
                 0 -> setLocked(false)
@@ -238,6 +255,7 @@ class MainActivity : Activity() {
                 3 -> { try { stopLockTask() } catch (_: Exception) {}; finish() }
                 4 -> startActivity(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
                     .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, AdminReceiver.component(this)))
+                5 -> startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
             }
         }.show()
     }

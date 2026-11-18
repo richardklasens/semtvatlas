@@ -105,7 +105,7 @@
     var age = (S.serverTime - d.lastSeen) / 1000;
     var on = age < 90;
     return '<span class="pill ' + (on ? 'on-p' : 'off-p') + '">' + (on ? 'online' : 'offline') + '</span> <span class="muted">' + ago(d.lastSeen) + ' · ' + (d.kind === 'browser' ? 'browser' : 'app ' + esc(d.appVersion || '')) +
-      (d.battery != null && d.battery >= 0 ? ' · ' + d.battery + '%' : '') + (d.touchLocked != null ? ' · touch ' + (d.touchLocked ? 'uit' : 'aan') : '') + (d.screenOn === false ? ' · scherm uit' : '') + '</span>';
+      (d.battery != null && d.battery >= 0 ? ' · ' + d.battery + '%' : '') + (d.touchLocked != null ? ' · touch ' + (d.touchLocked ? 'uit' : 'aan') : '') + (d.screenOn === false ? ' · scherm uit' : '') + (d.kind === 'app' ? ' · ' + (d.deviceOwner ? 'device owner' : 'geen device owner') + (d.overlayGranted === false ? ' · veegblokkade UIT' : '') : '') + '</span>';
   }
   function cmd(target, type, params, label) {
     if ((type === 'reboot') && !confirm('Paneel(en) herstarten?')) return;
