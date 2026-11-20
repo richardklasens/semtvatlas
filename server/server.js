@@ -28,7 +28,12 @@ const STARTED = Date.now();
 const LOG = []; let logSeq = 0;
 function log(level, scope, msg) {
   const e = { id: ++logSeq, t: Date.now(), level, scope: scope || '', msg: String(msg) };
-  LOG.push(e); if (LOG.length > 1500) LOG.splice(0, LOG.length - 1500);
+  LOG.push(e);
+  // FIFO: alleen de laatste 24 uur bewaren (en als vangnet maximaal 5000 regels)
+  const cut = e.t - 24 * 3600 * 1000; let n = 0;
+  while (n < LOG.length && LOG[n].t < cut) n++;
+  if (LOG.length - n > 5000) n = LOG.length - 5000;
+  if (n) LOG.splice(0, n);
   (level === 'error' ? console.error : console.log)(`[${new Date(e.t).toISOString()}] ${level.toUpperCase()} ${e.scope ? '[' + e.scope + '] ' : ''}${e.msg}`);
 }
 // per scherm-id (ook onbekende id's): wanneer en hoe speler en app voor het laatst contact maakten
@@ -456,7 +461,7 @@ async function handleApi(req, res, url) {
         serverTime: Date.now(), startedAt: STARTED, node: process.version, deviceKeySet: !!DEVICE_KEY, mock: SEM_MOCK,
         memoryMb: Math.round(process.memoryUsage().rss / 1048576), logCount: LOG.length,
         seen, screens: db.screens.map(s => ({ id: s.id, name: s.name })), devices: db.devices, apk: apkInfo(),
-        log: LOG.filter(e => e.id > since).slice(-1500)
+        log: LOG.filter(e => e.id > since)
       });
     }
     if (p === '/api/admin/diag/clear' && m === 'POST') { LOG.length = 0; log('info', '', 'log gewist vanuit het portaal'); return send(res, 200, { ok: true }); }

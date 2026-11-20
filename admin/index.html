@@ -276,7 +276,7 @@
       if (DSTART && d.startedAt !== DSTART) { DLOG = []; DSINCE = 0; DSTART = d.startedAt; return loadDiag(); }   // server herstart: log begint opnieuw
       DSTART = d.startedAt; DIAG = d;
       (d.log || []).forEach(function (e) { DLOG.push(e); if (e.id > DSINCE) DSINCE = e.id; });
-      if (DLOG.length > 1500) DLOG.splice(0, DLOG.length - 1500);
+      var cut = Date.now() - 24 * 3600 * 1000; while (DLOG.length && DLOG[0].t < cut) DLOG.shift();
       if (TAB === 'diag') rDiag();
     }).catch(function () {});
   }
@@ -298,7 +298,7 @@
     if (!DIAG) { $('#main').innerHTML = '<div class="muted">Laden…</div>'; loadDiag(); return; }
     if (!$('#dg_sum')) {
       $('#main').innerHTML = '<div id="dg_info" class="row muted"></div><div id="dg_sum"></div>' +
-        '<div class="card"><div class="row"><b>Runtime-log</b><span class="muted">(alleen in het geheugen: leeg na herstart/redeploy van de server)</span><span style="flex:1"></span>' +
+        '<div class="card"><div class="row"><b>Runtime-log</b><span class="muted">(laatste 24 uur, alleen in het geheugen: leeg na herstart/redeploy van de server)</span><span style="flex:1"></span>' +
         '<select id="dg_scope" style="width:auto"></select><select id="dg_level" style="width:auto"><option value="">alles</option><option value="warn">waarschuwingen + fouten</option><option value="error">alleen fouten</option></select>' +
         '<input id="dg_q" placeholder="zoeken…" style="width:160px"><button class="b" id="dg_copy">Kopieer</button><button class="b d" id="dg_clear">Wis log</button></div>' +
         '<div id="dg_log" style="font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;max-height:55vh;overflow:auto;background:#1d1519;color:#e8dfe3;border-radius:6px;padding:8px"></div></div>';
