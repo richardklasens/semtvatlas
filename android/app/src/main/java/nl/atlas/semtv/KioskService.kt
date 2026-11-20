@@ -167,14 +167,12 @@ class KioskService : Service() {
         }
     }
 
+    /**
+     * Scherm 'uit' = zwart beeld + minimale helderheid, bewust ZONDER lockNow(): het paneel blijft wakker,
+     * zodat de heartbeat doorloopt en "Scherm aan" altijd direct aankomt (een slapend paneel verliest soms wifi).
+     */
     private fun screenOff() {
         KioskState.onUi { it.setScreenOff(true) }
-        // met Device Owner / apparaatbeheerder het scherm daarna ook echt vergrendelen
-        if (AdminReceiver.isDeviceOwner(this) || AdminReceiver.dpm(this).isAdminActive(AdminReceiver.component(this))) {
-            KioskState.main.postDelayed({
-                try { AdminReceiver.dpm(this).lockNow() } catch (e: Exception) { KioskState.lastResult = "screen_off: ${e.message}" }
-            }, 800)
-        }
     }
 
     @Suppress("DEPRECATION")
