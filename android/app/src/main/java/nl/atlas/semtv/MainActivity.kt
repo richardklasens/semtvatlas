@@ -148,7 +148,17 @@ class MainActivity : Activity() {
     }
     override fun onWindowFocusChanged(hasFocus: Boolean) { super.onWindowFocusChanged(hasFocus); if (hasFocus) hideSystemUi() }
 
-    override fun onResume() { super.onResume(); addEdgeBlocker() }
+    private var pinTried = false
+    /** Schermvastzetten zonder Device Owner: Android vraagt dan één keer om bevestiging op het paneel. */
+    private fun pinIfWanted() {
+        if (pinTried || !Prefs(this).pinScreen || AdminReceiver.isDeviceOwner(this)) return
+        val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+        if (Build.VERSION.SDK_INT >= 23 && am.lockTaskModeState != android.app.ActivityManager.LOCK_TASK_MODE_NONE) return
+        pinTried = true
+        try { startLockTask() } catch (e: Exception) { KioskState.lastResult = "pin: ${e.message}" }
+    }
+
+    override fun onResume() { super.onResume(); addEdgeBlocker(); pinIfWanted() }
     override fun onPause() { removeEdgeBlocker(); super.onPause() }
 
     /** Onzichtbare strook onderaan (boven de Android-knoppenbalk) die aanraking opvangt, zodat een veeg de balk niet bruikbaar maakt.
@@ -246,7 +256,8 @@ class MainActivity : Activity() {
     }
 
     private fun adminMenu() {
-        val items = arrayOf("Touch weer aanzetten", "Pagina herladen", "Instellingen (server/scherm-ID)", "Kiosk verlaten", "Apparaatbeheerder activeren (scherm echt uitzetten)", "Veegblokkade toestaan (Weergeven over andere apps)")
+        val items = arrayOf("Touch weer aanzetten", "Pagina herladen", "Instellingen (server/scherm-ID)", "Kiosk verlaten", "Apparaatbeheerder activeren (scherm echt uitzetten)", "Veegblokkade toestaan (Weergeven over andere apps)",
+            if (Prefs(this).pinScreen) "Schermvastzetten UITzetten" else "Schermvastzetten AANzetten (zonder Device Owner)")
         AlertDialog.Builder(this).setTitle("Beheer").setItems(items) { _, which ->
             when (which) {
                 0 -> setLocked(false)
@@ -256,6 +267,12 @@ class MainActivity : Activity() {
                 4 -> startActivity(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
                     .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, AdminReceiver.component(this)))
                 5 -> startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
+                6 -> {
+                    val p = Prefs(this)
+                    p.pinScreen = !p.pinScreen
+                    if (p.pinScreen) { pinTried = false; pinIfWanted() }
+                    else if (!AdminReceiver.isDeviceOwner(this)) { try { stopLockTask() } catch (_: Exception) {} }
+                }
             }
         }.show()
     }

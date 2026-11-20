@@ -26,6 +26,10 @@ class Prefs(ctx: Context) {
     var brightness: Int
         get() = sp.getInt("brightness", -1)
         set(v) = sp.edit().putInt("brightness", v).apply()
+    // Schermvastzetten (Android "screen pinning") zonder Device Owner; aan/uit via het beheermenu
+    var pinScreen: Boolean
+        get() = sp.getBoolean("pinScreen", false)
+        set(v) = sp.edit().putBoolean("pinScreen", v).apply()
     var adminPin: String
         get() = sp.getString("adminPin", "1234") ?: "1234"
         set(v) = sp.edit().putString("adminPin", v).apply()
