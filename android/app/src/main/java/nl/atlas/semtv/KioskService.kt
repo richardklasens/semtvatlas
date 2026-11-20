@@ -47,6 +47,7 @@ class KioskService : Service() {
         startForeground(1, notification())
         if (!running) {
             running = true
+            KioskState.serviceStartedAt = System.currentTimeMillis()
             acquireLocks()
             thread(name = "heartbeat", isDaemon = true) { loop() }
         }
@@ -107,6 +108,9 @@ class KioskService : Service() {
             .put("overlayGranted", Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this))
             .put("activityAlive", KioskState.activity != null)
             .put("lastResult", KioskState.lastResult)
+            .put("hbFails", KioskState.beatFails)
+            .put("hbError", KioskState.beatError)
+            .put("updateStatus", KioskState.updateStatus)
             .put("localIp", "${ipInt and 0xff}.${ipInt shr 8 and 0xff}.${ipInt shr 16 and 0xff}.${ipInt shr 24 and 0xff}")
             .put("model", "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})")
             .put("uptimeMin", SystemClock.elapsedRealtime() / 60000)
@@ -117,8 +121,15 @@ class KioskService : Service() {
         if (!prefs.configured) return
         val ack = synchronized(pendingAck) { pendingAck.toList().also { pendingAck.clear() } }
         val url = "${prefs.serverUrl}/api/device/${java.net.URLEncoder.encode(prefs.screenId, "UTF-8")}/heartbeat"
+        KioskState.beatAt = System.currentTimeMillis()
         val resp = Api.post(url, payload(ack), prefs.deviceKey)
-        if (resp == null) { synchronized(pendingAck) { pendingAck.addAll(ack) }; return }
+        if (resp == null) {
+            KioskState.beatFails++; KioskState.beatError = Api.lastError
+            synchronized(pendingAck) { pendingAck.addAll(ack) }; return
+        }
+        KioskState.beatOkAt = System.currentTimeMillis()
+        // fouten van de periode ervoor zijn met deze (geslaagde) heartbeat meegestuurd; nu resetten
+        KioskState.beatFails = 0
 
         resp.optJSONObject("config")?.let { c ->
             prefs.touchMode = c.optString("touchMode", prefs.touchMode)
@@ -152,6 +163,7 @@ class KioskService : Service() {
             "screen_on" -> screenOn()
             "restart_app" -> restartApp()
             "reboot" -> reboot()
+            "update_app" -> thread(name = "update") { Updater.run(this, prefs) }
         }
     }
 

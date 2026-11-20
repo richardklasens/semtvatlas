@@ -23,6 +23,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.Toast
+import android.widget.ScrollView
 
 /**
  * Kiosk-scherm: WebView met de player, een touch-guard laag en (indien Device Owner) lock task.
@@ -257,7 +259,8 @@ class MainActivity : Activity() {
 
     private fun adminMenu() {
         val items = arrayOf("Touch weer aanzetten", "Pagina herladen", "Instellingen (server/scherm-ID)", "Kiosk verlaten", "Apparaatbeheerder activeren (scherm echt uitzetten)", "Veegblokkade toestaan (Weergeven over andere apps)",
-            if (Prefs(this).pinScreen) "Schermvastzetten UITzetten" else "Schermvastzetten AANzetten (zonder Device Owner)")
+            if (Prefs(this).pinScreen) "Schermvastzetten UITzetten" else "Schermvastzetten AANzetten (zonder Device Owner)",
+            "Diagnose (verbinding met de server)", "App bijwerken (nieuwste apk van de server)")
         AlertDialog.Builder(this).setTitle("Beheer").setItems(items) { _, which ->
             when (which) {
                 0 -> setLocked(false)
@@ -273,7 +276,44 @@ class MainActivity : Activity() {
                     if (p.pinScreen) { pinTried = false; pinIfWanted() }
                     else if (!AdminReceiver.isDeviceOwner(this)) { try { stopLockTask() } catch (_: Exception) {} }
                 }
+                7 -> showDiagnose()
+                8 -> startUpdate()
             }
         }.show()
+    }
+
+    private fun ago(t: Long): String = if (t == 0L) "nooit" else { val s = (System.currentTimeMillis() - t) / 1000; if (s < 90) "$s s geleden" else "${s / 60} min geleden" }
+
+    private fun showDiagnose() {
+        val p = Prefs(this)
+        val v = packageManager.getPackageInfo(packageName, 0).versionName
+        val tv = android.widget.TextView(this).apply {
+            setPadding(48, 24, 48, 0); textSize = 14f
+            text = "App: $v\nServer: ${p.serverUrl}\nScherm-ID: ${p.screenId}\nDevice key: ${if (p.deviceKey.isEmpty()) "leeg" else "ingevuld"}\n" +
+                "Device owner: ${if (AdminReceiver.isDeviceOwner(this@MainActivity)) "ja" else "nee"}\n\n" +
+                "Achtergrondservice: " + (if (KioskState.serviceStartedAt == 0L) "NIET GESTART" else "draait sinds " + ago(KioskState.serviceStartedAt)) + "\n" +
+                "Laatste heartbeat-poging: ${ago(KioskState.beatAt)}\n" +
+                "Laatste geslaagd: ${ago(KioskState.beatOkAt)}\n" +
+                (if (KioskState.beatFails > 0) "MISLUKT (${KioskState.beatFails}x): ${KioskState.beatError}\n" else "") +
+                (if (KioskState.updateStatus.isNotEmpty()) "\nUpdate: ${KioskState.updateStatus}\n" else "")
+        }
+        AlertDialog.Builder(this).setTitle("Diagnose").setView(ScrollView(this).apply { addView(tv) })
+            .setPositiveButton("Test verbinding nu") { _, _ ->
+                val dlg = AlertDialog.Builder(this).setTitle("Test…").setMessage("Even wachten…").setPositiveButton("Sluiten", null).show()
+                kotlin.concurrent.thread { val r = Updater.testConnection(this, p); runOnUiThread { dlg.setTitle("Resultaat"); dlg.setMessage(r) } }
+            }
+            .setNeutralButton("Service (her)starten") { _, _ -> KioskService.start(this) }
+            .setNegativeButton("Sluiten", null).show()
+    }
+
+    private fun startUpdate() {
+        if (Build.VERSION.SDK_INT >= 26 && !AdminReceiver.isDeviceOwner(this) && !packageManager.canRequestPackageInstalls()) {
+            Toast.makeText(this, "Sta eerst \"Onbekende apps installeren\" toe voor deze app en kies daarna opnieuw App bijwerken", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:$packageName")))
+            return
+        }
+        val p = Prefs(this)
+        Toast.makeText(this, "Update gestart; zie Diagnose voor de uitkomst", Toast.LENGTH_LONG).show()
+        kotlin.concurrent.thread(name = "update") { Updater.run(applicationContext, p) }
     }
 }

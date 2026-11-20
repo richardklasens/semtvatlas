@@ -53,6 +53,7 @@
       <button data-t="zones">Zalen</button>
       <button data-t="settings">Instellingen</button>
       <button data-t="sem">SEM-status</button>
+      <button data-t="diag">Diagnose</button>
     </nav>
     <span style="flex:1"></span><button class="b" id="logout">Uitloggen</button>
   </header>
@@ -78,7 +79,7 @@
       }).catch(function () {});
     }, 2000);
   }
-  var CMDNAME = { reload: 'Herladen', restart_app: 'Herstart app', reboot: 'Herstart paneel', screen_off: 'Scherm uit', screen_on: 'Scherm aan', touch_unlock: 'Touch aan', touch_lock: 'Touch uit', clear_cache: 'Cache wissen', set_brightness: 'Helderheid' };
+  var CMDNAME = { reload: 'Herladen', restart_app: 'Herstart app', reboot: 'Herstart paneel', screen_off: 'Scherm uit', screen_on: 'Scherm aan', touch_unlock: 'Touch aan', touch_lock: 'Touch uit', clear_cache: 'Cache wissen', update_app: 'App bijwerken', set_brightness: 'Helderheid' };
   function toast(t) { var e = $('#toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(function () { e.style.display = 'none'; }, 4000); }
 
   function api(method, path, body) {
@@ -105,10 +106,11 @@
     var age = (S.serverTime - d.lastSeen) / 1000;
     var on = age < 90;
     return '<span class="pill ' + (on ? 'on-p' : 'off-p') + '">' + (on ? 'online' : 'offline') + '</span> <span class="muted">' + ago(d.lastSeen) + ' · ' + (d.kind === 'browser' ? 'browser' : 'app ' + esc(d.appVersion || '')) +
-      (d.battery != null && d.battery >= 0 ? ' · ' + d.battery + '%' : '') + (d.touchLocked != null ? ' · touch ' + (d.touchLocked ? 'uit' : 'aan') : '') + (d.screenOn === false ? ' · scherm uit' : '') + (d.kind === 'app' ? ' · ' + (d.deviceOwner ? 'device owner' : 'geen device owner') + (d.overlayGranted === false ? ' · veegblokkade UIT' : '') : '') + '</span>';
+      (d.battery != null && d.battery >= 0 ? ' · ' + d.battery + '%' : '') + (d.touchLocked != null ? ' · touch ' + (d.touchLocked ? 'uit' : 'aan') : '') + (d.screenOn === false ? ' · scherm uit' : '') + (d.updateStatus ? ' · update: ' + esc(d.updateStatus) : '') + (d.kind === 'app' ? ' · ' + (d.deviceOwner ? 'device owner' : 'geen device owner') + (d.overlayGranted === false ? ' · veegblokkade UIT' : '') : '') + '</span>';
   }
   function cmd(target, type, params, label) {
     if ((type === 'reboot') && !confirm('Paneel(en) herstarten?')) return;
+    if (type === 'update_app' && !confirm('De nieuwste apk (zoals geüpload bij Instellingen) op de geselecteerde paneel/panelen installeren? Zonder Device Owner moet er op het paneel nog op Bijwerken getikt worden.')) return;
     var body = Object.assign({ type: type, params: params || {} }, target.group ? { group: target.group } : {});
     api('POST', '/screens/' + (target.group ? '_group' : target.id) + '/command', body).then(function (r) { toast((label || type) + ' verstuurd naar ' + r.queued + ' scherm(en)'); refresh(); [3000, 10000, 25000, 45000, 65000].forEach(function (ms) { setTimeout(refresh, ms); }); }).catch(function (e) { toast(e.message); });
   }
@@ -116,16 +118,16 @@
   /* ------------------------------------------------ tabs */
   function render() {
     if (!S) return;
-    ({ screens: rScreens, messages: rMessages, zones: rZones, settings: rSettings, sem: rSem })[TAB]();
+    ({ screens: rScreens, messages: rMessages, zones: rZones, settings: rSettings, sem: rSem, diag: rDiag })[TAB]();
   }
 
   function rScreens() {
     var groups = {}; S.screens.forEach(function (s) { groups[s.group || '-'] = 1; });
     var selIds = Object.keys(SEL).filter(function (k) { return SEL[k]; });
     var h = '<div class="row"><button class="b p" id="addScreen">+ Scherm</button><span class="muted">' + S.screens.length + ' schermen · ' + S.screens.filter(function (s) { var d = S.devices[s.id]; return d && (S.serverTime - d.lastSeen) < 90000; }).length + ' online</span><span style="flex:1"></span>' +
-      '<b>Selectie (' + selIds.length + '):</b> ' + ['reload|Herladen', 'restart_app|Herstart app', 'reboot|Herstart paneel', 'screen_off|Scherm uit', 'screen_on|Scherm aan', 'touch_unlock|Touch aan', 'touch_lock|Touch uit'].map(function (c) { var p = c.split('|'); return '<button class="b bulk" data-c="' + p[0] + '" data-l="' + p[1] + '">' + p[1] + '</button>'; }).join(' ') + '</div>';
+      '<b>Selectie (' + selIds.length + '):</b> ' + ['reload|Herladen', 'restart_app|Herstart app', 'reboot|Herstart paneel', 'screen_off|Scherm uit', 'screen_on|Scherm aan', 'touch_unlock|Touch aan', 'touch_lock|Touch uit', 'update_app|Update app'].map(function (c) { var p = c.split('|'); return '<button class="b bulk" data-c="' + p[0] + '" data-l="' + p[1] + '">' + p[1] + '</button>'; }).join(' ') + '</div>';
     h += '<div class="row"><span class="muted">Hele groep:</span><select id="grp" style="width:auto">' + Object.keys(groups).map(function (g) { return '<option>' + esc(g) + '</option>'; }).join('') + '</select>' +
-      ['reload|Herladen', 'restart_app|Herstart app', 'reboot|Herstart paneel'].map(function (c) { var p = c.split('|'); return '<button class="b grpb" data-c="' + p[0] + '" data-l="' + p[1] + '">' + p[1] + '</button>'; }).join(' ') + '</div>';
+      ['reload|Herladen', 'restart_app|Herstart app', 'reboot|Herstart paneel', 'update_app|Update app'].map(function (c) { var p = c.split('|'); return '<button class="b grpb" data-c="' + p[0] + '" data-l="' + p[1] + '">' + p[1] + '</button>'; }).join(' ') + '</div>';
     h += '<table><tr><th><input type="checkbox" id="selAll"></th><th>Scherm</th><th>Groep</th><th>Status</th><th>Slides</th><th></th></tr>';
     S.screens.forEach(function (s) {
       h += '<tr><td><input type="checkbox" class="sel" data-id="' + esc(s.id) + '"' + (SEL[s.id] ? ' checked' : '') + '></td><td><b>' + esc(s.name) + '</b><br><span class="muted">' + esc(s.id) + '</span></td><td>' + esc(s.group) + '</td><td>' + status(s.id) +
@@ -267,6 +269,83 @@
     };
   }
   var PROBE_DEFAULT = 'RecordNumber, ReservationName, WelcomeText, FacilityWelcomeText, FacilityName, FacilityId, FacilityIds, FacilityCode, FacilityDescription, FacilitySequenceNumber, Facilities, FacilityNames, ReservationId, ReservationNumber, StartTime, EndTime, StartDateTime, EndDateTime, ArrivalTime, DepartureTime, Description, Remarks, Comment, CompanyName, Location, LocationName, RoomName, RoomId, Category, Status, Color, Image, ImageUrl, Logo';
+  /* ------------------------------------------------ diagnose + runtime-log (alleen geheugen op de server) */
+  var DIAG = null, DLOG = [], DSINCE = 0, DSTART = 0, DF = { scope: '', level: '', q: '' };
+  function loadDiag() {
+    return api('GET', '/diag?since=' + DSINCE).then(function (d) {
+      if (DSTART && d.startedAt !== DSTART) { DLOG = []; DSINCE = 0; DSTART = d.startedAt; return loadDiag(); }   // server herstart: log begint opnieuw
+      DSTART = d.startedAt; DIAG = d;
+      (d.log || []).forEach(function (e) { DLOG.push(e); if (e.id > DSINCE) DSINCE = e.id; });
+      if (DLOG.length > 1500) DLOG.splice(0, DLOG.length - 1500);
+      if (TAB === 'diag') rDiag();
+    }).catch(function () {});
+  }
+  setInterval(function () { if (TOKEN && TAB === 'diag') loadDiag(); }, 3000);
+  function fmtT(t) { return new Date(t).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+  function dAgo(t) { if (!t) return '—'; var s = Math.round((DIAG.serverTime - t) / 1000); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : Math.round(s / 3600) + ' u'; }
+  function hint(id) {
+    var s = DIAG.seen[id] || {}, d = DIAG.devices[id], now = DIAG.serverTime;
+    var playerRecent = s.playerAt && now - s.playerAt < 120000;
+    if (d && now - d.lastSeen < 90000) return ['on-p', 'Online'];
+    if (s.hbResult === '401' && now - s.hbAt < 120000) return ['off-p', 'Heartbeat geweigerd: device key ontbreekt of klopt niet'];
+    if (s.hbResult === '404' && now - s.hbAt < 120000) return ['off-p', 'De app meldt zich met een scherm-ID dat niet bestaat'];
+    if (playerRecent && !d) return ['off-p', 'De speler haalt wel gegevens op, maar er is nog NOOIT een heartbeat ontvangen: oude app, service niet gestart, speler draait in een browser met een oude pagina, of de heartbeat komt niet door (netwerk/serveradres). Gebruik op het paneel: beheermenu → Diagnose.'];
+    if (playerRecent) return ['warn-p', 'Speler is actief maar de heartbeat is gestopt: de achtergrondservice draait niet meer of bereikt de server niet.'];
+    if (d) return ['warn-p', 'Geen contact meer (speler én app): paneel uit, offline of op een ander netwerk.'];
+    return ['warn-p', 'Er is nog nooit contact geweest met dit scherm-ID.'];
+  }
+  function rDiag() {
+    if (!DIAG) { $('#main').innerHTML = '<div class="muted">Laden…</div>'; loadDiag(); return; }
+    if (!$('#dg_sum')) {
+      $('#main').innerHTML = '<div id="dg_info" class="row muted"></div><div id="dg_sum"></div>' +
+        '<div class="card"><div class="row"><b>Runtime-log</b><span class="muted">(alleen in het geheugen: leeg na herstart/redeploy van de server)</span><span style="flex:1"></span>' +
+        '<select id="dg_scope" style="width:auto"></select><select id="dg_level" style="width:auto"><option value="">alles</option><option value="warn">waarschuwingen + fouten</option><option value="error">alleen fouten</option></select>' +
+        '<input id="dg_q" placeholder="zoeken…" style="width:160px"><button class="b" id="dg_copy">Kopieer</button><button class="b d" id="dg_clear">Wis log</button></div>' +
+        '<div id="dg_log" style="font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;max-height:55vh;overflow:auto;background:#1d1519;color:#e8dfe3;border-radius:6px;padding:8px"></div></div>';
+      $('#dg_scope').onchange = function (e) { DF.scope = e.target.value; rDiagLog(); };
+      $('#dg_level').onchange = function (e) { DF.level = e.target.value; rDiagLog(); };
+      $('#dg_q').oninput = function (e) { DF.q = e.target.value.toLowerCase(); rDiagLog(); };
+      $('#dg_copy').onclick = function () { var t = filtered().map(function (e) { return fmtT(e.t) + ' ' + e.level.toUpperCase() + ' ' + (e.scope ? '[' + e.scope + '] ' : '') + e.msg; }).join('\n'); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast('Log gekopieerd'); }).catch(function () { toast('Kopiëren niet gelukt'); }); };
+      $('#dg_clear').onclick = function () { api('POST', '/diag/clear', {}).then(function () { DLOG = []; DSINCE = 0; loadDiag(); }); };
+    }
+    var up = Math.round((DIAG.serverTime - DIAG.startedAt) / 60000);
+    $('#dg_info').innerHTML = '<span>Server draait ' + (up < 120 ? up + ' min' : Math.round(up / 60) + ' u') + ' · Node ' + esc(DIAG.node) + ' · ' + DIAG.memoryMb + ' MB</span> · <span>device key: <b>' + (DIAG.deviceKeySet ? 'ingesteld' : 'niet ingesteld') + '</b></span> · <span>apk op server: <b>' + (DIAG.apk && DIAG.apk.exists ? Math.round(DIAG.apk.size / 1048576 * 10) / 10 + ' MB, ' + new Date(DIAG.apk.mtime).toLocaleString('nl-NL') : 'geen') + '</b></span>';
+    var ids = {}; DIAG.screens.forEach(function (s) { ids[s.id] = 1; });
+    var h = '<table><tr><th>Scherm</th><th>Speler (inhoud ophalen)</th><th>App-heartbeat</th><th>Apparaat</th><th>Diagnose</th></tr>';
+    DIAG.screens.forEach(function (sc) {
+      var s = DIAG.seen[sc.id] || {}, d = DIAG.devices[sc.id], hn = hint(sc.id);
+      h += '<tr><td><b>' + esc(sc.name) + '</b><br><span class="muted">' + esc(sc.id) + '</span></td>' +
+        '<td>' + (s.playerAt ? dAgo(s.playerAt) + ' geleden<br><span class="muted">' + esc(s.playerIp || '') + '</span>' : '<span class="muted">nooit</span>') + '</td>' +
+        '<td>' + (d ? dAgo(d.lastSeen) + ' geleden<br><span class="muted">' + esc(d.kind === 'browser' ? 'browser-speler' : 'app ' + (d.appVersion || '')) + ' · ' + esc(d.ip || '') + '</span>' : '<span class="muted">nooit</span>') +
+          (s.hbResult && s.hbResult !== 'ok' ? '<br><span style="color:var(--bad)">laatste poging: ' + (s.hbResult === '401' ? 'geweigerd (key)' : 'geweigerd (onbekend ID)') + ' ' + dAgo(s.hbAt) + ' geleden</span>' : '') + '</td>' +
+        '<td class="muted">' + (d && d.kind === 'app' ? esc(d.model || '') + '<br>service/activiteit: ' + (d.activityAlive ? 'actief' : 'GEEN activiteit') + ' · uptime ' + (d.uptimeMin != null ? Math.round(d.uptimeMin / 60 * 10) / 10 + ' u' : '?') + (d.hbFails ? '<br>mislukte pogingen: ' + d.hbFails + ' (' + esc(d.hbError || '') + ')' : '') + (d.updateStatus ? '<br>update: ' + esc(d.updateStatus) : '') : (d ? esc((d.ua || '').slice(0, 60)) : (s.playerUa ? esc(s.playerUa.slice(0, 70)) : ''))) + '</td>' +
+        '<td><span class="pill ' + hn[0] + '" style="display:block;white-space:normal;border-radius:6px">' + esc(hn[1]) + '</span></td></tr>';
+    });
+    h += '</table>';
+    var unk = Object.keys(DIAG.seen).filter(function (k) { return !ids[k] && (DIAG.seen[k].playerAt || DIAG.seen[k].hbAt); });
+    if (unk.length) {
+      h += '<div class="card" style="border-color:var(--bad)"><b>Onbekende scherm-ID\'s die contact zochten</b><div class="muted">Een paneel dat hier staat, heeft een ID ingesteld dat niet in het portaal bestaat (typfout of ander ID).</div><table><tr><th>ID zoals ontvangen</th><th>Laatst</th><th>IP</th><th>Via</th></tr>' +
+        unk.map(function (k) { var s = DIAG.seen[k]; return '<tr><td><code>' + esc(k) + '</code></td><td>' + dAgo(Math.max(s.playerAt || 0, s.hbAt || 0)) + ' geleden</td><td>' + esc(s.playerIp || s.hbIp || '') + '</td><td>' + (s.hbAt ? 'app-heartbeat' : 'speler') + '</td></tr>'; }).join('') + '</table></div>';
+    }
+    $('#dg_sum').innerHTML = h;
+    var sel = $('#dg_scope'), scopes = {}; DLOG.forEach(function (e) { if (e.scope) scopes[e.scope] = 1; });
+    var opt = '<option value="">alle schermen/bronnen</option>' + Object.keys(scopes).sort().map(function (k) { return '<option' + (DF.scope === k ? ' selected' : '') + ' value="' + esc(k) + '">' + esc(k) + '</option>'; }).join('');
+    if (sel.innerHTML !== opt) sel.innerHTML = opt;
+    rDiagLog();
+  }
+  function filtered() {
+    var rank = { info: 0, warn: 1, error: 2 }, min = DF.level === 'error' ? 2 : DF.level === 'warn' ? 1 : 0;
+    return DLOG.filter(function (e) { return (!DF.scope || e.scope === DF.scope) && rank[e.level] >= min && (!DF.q || (e.msg + ' ' + e.scope).toLowerCase().indexOf(DF.q) >= 0); });
+  }
+  function rDiagLog() {
+    var box = $('#dg_log'); if (!box) return;
+    var atTop = box.scrollTop < 30, col = { info: '#e8dfe3', warn: '#ffb74d', error: '#ff6b6b' };
+    box.innerHTML = filtered().slice().reverse().slice(0, 500).map(function (e) {
+      return '<div style="color:' + col[e.level] + '"><span style="opacity:.6">' + fmtT(e.t) + '</span> ' + (e.scope ? '<b>[' + esc(e.scope) + ']</b> ' : '') + esc(e.msg) + '</div>';
+    }).join('') || '<span style="opacity:.6">Geen regels.</span>';
+    if (atTop) box.scrollTop = 0;
+  }
+
   function rSem() {
     var bad = S.sem.filter(function (x) { return !x.ok; }).length;
     var h = '<div class="row"><b>' + S.sem.length + ' facilities</b> · <span class="pill ' + (bad ? 'warn-p' : 'on-p') + '">' + bad + ' met fout</span>' + (S.mock ? ' <span class="pill warn-p">MOCK-DATA</span>' : '') + '<button class="b" id="semRef">Nu verversen</button></div>' +

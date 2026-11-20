@@ -23,6 +23,24 @@ const SECRET = crypto.createHash('sha256').update('semtv|' + ADMIN_PASSWORD).dig
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
+/* ------------------------------------------------------------------ runtime-log (alleen geheugen: bij herstart/redeploy begint hij leeg) */
+const STARTED = Date.now();
+const LOG = []; let logSeq = 0;
+function log(level, scope, msg) {
+  const e = { id: ++logSeq, t: Date.now(), level, scope: scope || '', msg: String(msg) };
+  LOG.push(e); if (LOG.length > 1500) LOG.splice(0, LOG.length - 1500);
+  (level === 'error' ? console.error : console.log)(`[${new Date(e.t).toISOString()}] ${level.toUpperCase()} ${e.scope ? '[' + e.scope + '] ' : ''}${e.msg}`);
+}
+// per scherm-id (ook onbekende id's): wanneer en hoe speler en app voor het laatst contact maakten
+const seen = {};
+function seenFor(id) {
+  if (!seen[id]) { if (Object.keys(seen).length >= 300) return null; seen[id] = {}; }
+  return seen[id];
+}
+const clientIp = req => (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().replace(/^::ffff:/, '');
+const shortUa = req => String(req.headers['user-agent'] || '').slice(0, 110);
+log('info', '', 'server gestart (poort ' + PORT + ', SEM_MOCK=' + SEM_MOCK + ', device key ' + (DEVICE_KEY ? 'INGESTELD' : 'niet ingesteld') + ')');
+
 /* ------------------------------------------------------------------ opslag */
 const DEFAULT_DB = {
   settings: {
@@ -195,16 +213,22 @@ async function refreshSem() {
         const fid = queue.shift();
         try {
           const r = await fetchFacility(fid);
+          const was = semCache.get(fid);
           semCache.set(fid, { items: r.items, raw: r.raw, fetchedAt: Date.now(), ok: true, error: null });
+          if (was && !was.ok) log('info', 'SEM', 'facility ' + fid + ' hersteld (' + r.items.length + ' reserveringen)');
         } catch (e) {
           const prev = semCache.get(fid) || { items: [] };
+          if (prev.ok !== false || prev.error !== String(e.message || e)) log('error', 'SEM', 'facility ' + fid + ' ophalen mislukt: ' + String(e.message || e));
           semCache.set(fid, Object.assign({}, prev, { ok: false, error: String(e.message || e), failedAt: Date.now() }));
         }
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
+    const bad = [...semCache.values()].filter(c => !c.ok).length, sum = semCache.size + ' facilities, ' + bad + ' met fout';
+    if (sum !== lastSemSum) { lastSemSum = sum; log(bad ? 'warn' : 'info', 'SEM', 'ophalen klaar: ' + sum); }
   } finally { semBusy = false; }
 }
+let lastSemSum = '';
 function scheduleSem() {
   refreshSem().finally(() => setTimeout(scheduleSem, Math.max(10, db.settings.pollSeconds) * 1000));
 }
@@ -366,7 +390,16 @@ async function handleApi(req, res, url) {
   // ---- player
   let mt = p.match(/^\/api\/player\/([^/]+)\/state$/);
   if (mt && m === 'GET') {
-    const sc = screenById(decodeURIComponent(mt[1]));
+    const pid = decodeURIComponent(mt[1]);
+    const sc = screenById(pid);
+    const ps = seenFor(pid);
+    if (ps) {
+      const now = Date.now(), gap = now - (ps.playerAt || 0);
+      if (!sc) { if (now - (ps.unknownLogAt || 0) > 300000) { ps.unknownLogAt = now; log('warn', pid, 'speler vraagt onbekend scherm-id "' + pid + '" (' + clientIp(req) + ') — bestaat niet in het portaal'); } }
+      else if (!ps.playerAt) log('info', pid, 'speler voor het eerst gezien (' + clientIp(req) + ', ' + shortUa(req) + ')');
+      else if (gap > 120000) log('info', pid, 'speler weer actief na ' + Math.round(gap / 1000) + ' s');
+      ps.playerAt = now; ps.playerIp = clientIp(req); ps.playerUa = shortUa(req); ps.known = !!sc;
+    }
     if (!sc) return send(res, 404, { error: 'onbekend scherm' });
     return send(res, 200, buildState(sc));
   }
@@ -376,14 +409,27 @@ async function handleApi(req, res, url) {
   // ---- android device
   mt = p.match(/^\/api\/device\/([^/]+)\/heartbeat$/);
   if (mt && m === 'POST') {
-    if (!deviceOk(req)) return send(res, 401, { error: 'ongeldige device key' });
     const id = decodeURIComponent(mt[1]);
+    const hs = seenFor(id) || {};
+    const note = (result, level, text) => {
+      const now = Date.now();
+      hs.hbAt = now; hs.hbResult = result; hs.hbIp = clientIp(req); hs.hbUa = shortUa(req);
+      if (hs.hbLogged !== result || now - (hs.hbLogAt || 0) > 300000) { hs.hbLogged = result; hs.hbLogAt = now; log(level, id, text + ' (' + clientIp(req) + ')'); }
+    };
+    if (!deviceOk(req)) { note('401', 'error', 'heartbeat GEWEIGERD: device key ontbreekt of klopt niet'); return send(res, 401, { error: 'ongeldige device key' }); }
     const sc = screenById(id);
-    if (!sc) return send(res, 404, { error: 'onbekend scherm' });
+    if (!sc) { note('404', 'error', 'heartbeat GEWEIGERD: scherm-id "' + id + '" bestaat niet in het portaal'); return send(res, 404, { error: 'onbekend scherm' }); }
     const body = await readBody(req);
-    (body.ackIds || []).forEach(a => { cmdDone[a] = Date.now(); if (cmdMeta[a]) lastDone[id] = { type: cmdMeta[a].type, at: Date.now() }; db.commands[id] = (db.commands[id] || []).filter(c => c.id !== a); });
+    const prevDev = db.devices[id], nowMs = Date.now();
+    if (!prevDev) log('info', id, 'eerste heartbeat ontvangen (' + (body.kind || '?') + ' ' + (body.appVersion || '') + ', ' + (body.model || body.ua || '') + ', ' + clientIp(req) + ')');
+    else if (nowMs - prevDev.lastSeen > 90000) log('info', id, 'weer ONLINE na ' + Math.round((nowMs - prevDev.lastSeen) / 1000) + ' s');
+    hs.offlineLogged = false;
+    note('ok', 'info', 'heartbeat ok');
+    if (body.hbFails > 0 && body.hbError && hs.clientErr !== body.hbError) { hs.clientErr = body.hbError; log('warn', id, 'app meldt ' + body.hbFails + ' mislukte heartbeat(s) vlak ervoor; laatste fout: ' + body.hbError); }
+    if (body.lastResult && hs.lastResult !== body.lastResult) { hs.lastResult = body.lastResult; log('info', id, 'app: ' + body.lastResult); }
+    (body.ackIds || []).forEach(a => { cmdDone[a] = Date.now(); if (cmdMeta[a]) { lastDone[id] = { type: cmdMeta[a].type, at: Date.now() }; log('info', id, 'commando "' + cmdMeta[a].type + '" bevestigd door scherm'); } db.commands[id] = (db.commands[id] || []).filter(c => c.id !== a); });
     Object.keys(cmdDone).forEach(k => { if (Date.now() - cmdDone[k] > 3600000) delete cmdDone[k]; });
-    db.devices[id] = Object.assign({}, body, { ackIds: undefined, lastSeen: Date.now(), ip: (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString() });
+    db.devices[id] = Object.assign({}, body, { ackIds: undefined, lastSeen: Date.now(), ip: clientIp(req) });
     pruneCommands(); saveDb();
     return send(res, 200, { commands: db.commands[id] || [], config: deviceConfigFor(sc), serverTime: Date.now() });
   }
@@ -397,12 +443,23 @@ async function handleApi(req, res, url) {
   // ---- admin
   if (p === '/api/admin/login' && m === 'POST') {
     const b = await readBody(req);
-    if (b.password === ADMIN_PASSWORD) return send(res, 200, { token: makeToken() });
+    if (b.password === ADMIN_PASSWORD) { log('info', '', 'portaal: ingelogd (' + clientIp(req) + ')'); return send(res, 200, { token: makeToken() }); }
+    log('warn', '', 'portaal: mislukte inlogpoging (' + clientIp(req) + ')');
     return send(res, 401, { error: 'Onjuist wachtwoord' });
   }
   if (p.startsWith('/api/admin/')) {
     if (!isAdmin(req)) return send(res, 401, { error: 'Niet ingelogd' });
 
+    if (p === '/api/admin/diag' && m === 'GET') {
+      const since = parseInt(url.searchParams.get('since') || '0', 10) || 0;
+      return send(res, 200, {
+        serverTime: Date.now(), startedAt: STARTED, node: process.version, deviceKeySet: !!DEVICE_KEY, mock: SEM_MOCK,
+        memoryMb: Math.round(process.memoryUsage().rss / 1048576), logCount: LOG.length,
+        seen, screens: db.screens.map(s => ({ id: s.id, name: s.name })), devices: db.devices, apk: apkInfo(),
+        log: LOG.filter(e => e.id > since).slice(-1500)
+      });
+    }
+    if (p === '/api/admin/diag/clear' && m === 'POST') { LOG.length = 0; log('info', '', 'log gewist vanuit het portaal'); return send(res, 200, { ok: true }); }
     if (p === '/api/admin/state' && m === 'GET') {
       pruneCommands();
       return send(res, 200, {
@@ -464,12 +521,12 @@ async function handleApi(req, res, url) {
     mt = p.match(/^\/api\/admin\/screens\/([^/]+)\/command$/);
     if (mt && m === 'POST') {
       const b = await readBody(req);
-      const ALLOWED = ['reload', 'restart_app', 'reboot', 'screen_on', 'screen_off', 'touch_lock', 'touch_unlock', 'clear_cache', 'set_brightness'];
+      const ALLOWED = ['reload', 'restart_app', 'reboot', 'screen_on', 'screen_off', 'touch_lock', 'touch_unlock', 'clear_cache', 'set_brightness', 'update_app'];
       if (!ALLOWED.includes(b.type)) return send(res, 400, { error: 'onbekend commando' });
       const ids = mt[1] === '_all' ? db.screens.map(s => s.id) : (mt[1] === '_group' ? db.screens.filter(s => s.group === b.group).map(s => s.id) : [decodeURIComponent(mt[1])]);
       // herladen: eerst de nieuwste data uit SEM ophalen, daarna pas naar de schermen pushen
       if (['reload', 'clear_cache', 'restart_app'].includes(b.type)) { try { await refreshSem(); } catch (e) {} }
-      ids.forEach(i => screenById(i) && queueCommand(i, b.type, b.params));
+      ids.forEach(i => { if (screenById(i)) { queueCommand(i, b.type, b.params); log('info', i, 'commando "' + b.type + '" in de wachtrij gezet vanuit het portaal'); } });
       return send(res, 200, { queued: ids.length });
     }
     if (p === '/api/admin/messages' && m === 'POST') {
@@ -557,6 +614,15 @@ const server = http.createServer(async (req, res) => {
 if (require.main === module) {
   server.listen(PORT, () => console.log(`SEM-TV Atlas server op poort ${PORT} (mock=${SEM_MOCK})`));
   scheduleSem();
+  setInterval(() => {
+    const now = Date.now();
+    Object.keys(db.devices).forEach(id => {
+      const d = db.devices[id], ss = seenFor(id);
+      if (!d || !ss || ss.offlineLogged || !screenById(id) || now - d.lastSeen < 90000) return;
+      ss.offlineLogged = true;
+      log('warn', id, 'OFFLINE: al ' + Math.round((now - d.lastSeen) / 1000) + ' s geen heartbeat' + (ss.playerAt && now - ss.playerAt < 120000 ? ' — de speler haalt wel nog gegevens op (' + ss.playerIp + ')' : ''));
+    });
+  }, 15000);
   process.on('SIGTERM', () => { try { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); } catch (e) {} process.exit(0); });
 }
 module.exports = { parseSemHtml, server };
