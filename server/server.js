@@ -358,8 +358,69 @@ function pruneCommands() {
   if (changed) saveDb();
 }
 setInterval(pruneCommands, 10000);
+/* ---- versie uit de apk lezen (zip + binaire AndroidManifest.xml), zonder externe pakketten */
+function zipEntry(buf, name) {
+  let e = buf.length - 22;
+  while (e >= 0 && buf.readUInt32LE(e) !== 0x06054b50) e--;
+  if (e < 0) return null;
+  const cnt = buf.readUInt16LE(e + 10); let off = buf.readUInt32LE(e + 16);
+  for (let i = 0; i < cnt; i++) {
+    if (buf.readUInt32LE(off) !== 0x02014b50) return null;
+    const method = buf.readUInt16LE(off + 10), csize = buf.readUInt32LE(off + 20), nlen = buf.readUInt16LE(off + 28),
+      xlen = buf.readUInt16LE(off + 30), clen = buf.readUInt16LE(off + 32), lho = buf.readUInt32LE(off + 42);
+    if (buf.toString('utf8', off + 46, off + 46 + nlen) === name) {
+      const start = lho + 30 + buf.readUInt16LE(lho + 26) + buf.readUInt16LE(lho + 28), data = buf.subarray(start, start + csize);
+      return method === 0 ? data : require('zlib').inflateRawSync(data);
+    }
+    off += 46 + nlen + xlen + clen;
+  }
+  return null;
+}
+function parseManifest(x) {
+  // Android binary XML: stringpool-chunk + element-chunks; we need the attributes of <manifest>
+  let off = x.readUInt16LE(2), strings = null, res = {};
+  while (off + 8 <= x.length) {
+    const type = x.readUInt16LE(off), hsize = x.readUInt16LE(off + 2), size = x.readUInt32LE(off + 4);
+    if (type === 0x0001) {
+      const n = x.readUInt32LE(off + 8), utf8 = (x.readUInt32LE(off + 16) & 0x100) !== 0, sBase = off + x.readUInt32LE(off + 20);
+      strings = [];
+      for (let i = 0; i < n; i++) {
+        let p = sBase + x.readUInt32LE(off + hsize + i * 4);
+        if (utf8) {
+          let l = x[p++]; if (l & 0x80) p++;            // aantal tekens (overslaan)
+          let b = x[p++]; if (b & 0x80) b = ((b & 0x7f) << 8) | x[p++];
+          strings.push(x.toString('utf8', p, p + b));
+        } else {
+          let l = x.readUInt16LE(p); p += 2; if (l & 0x8000) { l = ((l & 0x7fff) << 16) | x.readUInt16LE(p); p += 2; }
+          strings.push(x.toString('utf16le', p, p + l * 2));
+        }
+      }
+    } else if (type === 0x0102 && strings) {
+      const nameIdx = x.readUInt32LE(off + 20), aStart = x.readUInt16LE(off + 24), aSize = x.readUInt16LE(off + 26), aCnt = x.readUInt16LE(off + 28);
+      if (strings[nameIdx] !== 'manifest') return res;
+      for (let i = 0; i < aCnt; i++) {
+        const a = off + 16 + aStart + i * aSize, an = strings[x.readUInt32LE(a + 4)], raw = x.readUInt32LE(a + 8), dt = x[a + 15], data = x.readUInt32LE(a + 16);
+        res[an] = raw !== 0xffffffff ? strings[raw] : (dt === 0x03 ? strings[data] : data);
+      }
+      return res;
+    }
+    if (size < 8) break;
+    off += size;
+  }
+  return res;
+}
+let apkMetaCache = null;
 function apkInfo() {
-  try { const st = fs.statSync(path.join(DATA_DIR, 'downloads', 'app-release.apk')); return { exists: true, size: st.size, mtime: st.mtimeMs }; } catch (e) { return { exists: false }; }
+  const f = path.join(DATA_DIR, 'downloads', 'app-release.apk');
+  try {
+    const st = fs.statSync(f);
+    if (!apkMetaCache || apkMetaCache.mtime !== st.mtimeMs || apkMetaCache.size !== st.size) {
+      let meta = {};
+      try { const m = parseManifest(zipEntry(fs.readFileSync(f), 'AndroidManifest.xml')); meta = { versionName: m.versionName || null, versionCode: Number(m.versionCode) || null, package: m.package || null }; } catch (e) { meta = { parseError: String(e.message || e) }; }
+      apkMetaCache = Object.assign({ exists: true, size: st.size, mtime: st.mtimeMs }, meta);
+    }
+    return apkMetaCache;
+  } catch (e) { return { exists: false }; }
 }
 function queueCommand(screenId, type, params) {
   pruneCommands();
@@ -630,4 +691,4 @@ if (require.main === module) {
   }, 15000);
   process.on('SIGTERM', () => { try { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); } catch (e) {} process.exit(0); });
 }
-module.exports = { parseSemHtml, server };
+module.exports = { parseSemHtml, server, parseManifest, zipEntry };
