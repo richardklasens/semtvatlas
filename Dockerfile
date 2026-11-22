@@ -5,6 +5,8 @@ COPY server ./server
 COPY player ./player
 COPY admin ./admin
 COPY media ./media
+# Ubuntu-agent + installatiescript (te downloaden via /ubuntu/)
+COPY ubuntu ./ubuntu
 # oude SEM-TV pagina's blijven bereikbaar onder /legacy (en leveren de fonts voor de player)
 COPY html ./html
 

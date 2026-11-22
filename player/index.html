@@ -580,6 +580,21 @@
   load(); setInterval(load, 20000);
   loadWeather(); setInterval(loadWeather, 600000);
   heartbeat(); setInterval(heartbeat, 20000);
+
+  /* ---------- Ubuntu-agent (kiosk-browser met &agent=1): zwart scherm en herladen op afstand via 127.0.0.1:8765 */
+  if (qs.get('agent') === '1') {
+    var agOff = document.createElement('div');
+    agOff.style.cssText = 'position:fixed;inset:0;background:#000;z-index:2147483647;display:none;cursor:none';
+    document.body.appendChild(agOff);
+    var agReload = null;
+    setInterval(function () {
+      fetch('http://127.0.0.1:8765/state', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (a) {
+        agOff.style.display = a.off ? 'block' : 'none';
+        if (agReload === null) agReload = a.reload; else if (a.reload !== agReload) location.reload();
+      }).catch(function () {});
+    }, 2000);
+  }
+
   // dagelijkse volledige herlaad tegen geheugenlekken (alleen buiten de app)
   setTimeout(function () { location.reload(); }, 6 * 3600 * 1000);
 })();

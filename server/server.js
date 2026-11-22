@@ -409,6 +409,9 @@ function parseManifest(x) {
   }
   return res;
 }
+function agentInfo() {
+  try { const m = /^AGENT_VERSION = "([^"]+)"/m.exec(fs.readFileSync(path.join(WEB_ROOT, 'ubuntu', 'semtv-agent.py'), 'utf8')); return m ? { versionName: m[1] } : null; } catch (e) { return null; }
+}
 let apkMetaCache = null;
 function apkInfo() {
   const f = path.join(DATA_DIR, 'downloads', 'app-release.apk');
@@ -521,7 +524,7 @@ async function handleApi(req, res, url) {
       return send(res, 200, {
         serverTime: Date.now(), startedAt: STARTED, node: process.version, deviceKeySet: !!DEVICE_KEY, mock: SEM_MOCK,
         memoryMb: Math.round(process.memoryUsage().rss / 1048576), logCount: LOG.length,
-        seen, screens: db.screens.map(s => ({ id: s.id, name: s.name })), devices: db.devices, apk: apkInfo(),
+        seen, screens: db.screens.map(s => ({ id: s.id, name: s.name })), devices: db.devices, apk: apkInfo(), agent: agentInfo(),
         log: LOG.filter(e => e.id > since)
       });
     }
@@ -532,7 +535,7 @@ async function handleApi(req, res, url) {
         settings: db.settings, screens: db.screens, messages: db.messages,
         devices: db.devices, pending: Object.fromEntries(Object.entries(db.commands).map(([k, v]) => [k, v.length])),
         sem: [...semCache.entries()].map(([fid, c]) => ({ fid, ok: c.ok, error: c.error, items: c.items.length, fetchedAt: c.fetchedAt })),
-        mock: SEM_MOCK, serverTime: Date.now(), apk: apkInfo(), lastDone
+        mock: SEM_MOCK, serverTime: Date.now(), apk: apkInfo(), agent: agentInfo(), lastDone
       });
     }
     if (p === '/api/admin/apk' && m === 'POST') {
@@ -639,7 +642,7 @@ async function handleApi(req, res, url) {
 function serveStatic(req, res, url) {
   let p = decodeURIComponent(url.pathname);
   // /downloads wijst naar het data-volume: zet daar de gebouwde APK neer (zie DEPLOYMENT.md)
-  const maps = [['/player', path.join(WEB_ROOT, 'player')], ['/admin', path.join(WEB_ROOT, 'admin')],
+  const maps = [['/ubuntu', path.join(WEB_ROOT, 'ubuntu')], ['/player', path.join(WEB_ROOT, 'player')], ['/admin', path.join(WEB_ROOT, 'admin')],
     ['/legacy', path.join(WEB_ROOT, 'html')], ['/downloads', path.join(DATA_DIR, 'downloads')],
     ['/media', fs.existsSync(path.join(DATA_DIR, 'media', p.slice(7))) && p.length > 7 ? path.join(DATA_DIR, 'media') : path.join(WEB_ROOT, 'media')]];
   let base = null;

@@ -105,8 +105,8 @@
     var d = S.devices[id]; if (!d) return '<span class="pill off-p">nooit gezien</span>';
     var age = (S.serverTime - d.lastSeen) / 1000;
     var on = age < 90;
-    return '<span class="pill ' + (on ? 'on-p' : 'off-p') + '">' + (on ? 'online' : 'offline') + '</span> <span class="muted">' + ago(d.lastSeen) + ' · ' + (d.kind === 'browser' ? 'browser' : 'app ' + esc(d.appVersion || '')) +
-      (d.battery != null && d.battery >= 0 ? ' · ' + d.battery + '%' : '') + (d.touchLocked != null ? ' · touch ' + (d.touchLocked ? 'uit' : 'aan') : '') + (d.screenOn === false ? ' · scherm uit' : '') + (d.updateStatus ? ' · update: ' + esc(d.updateStatus) : '') + (d.kind === 'app' && S.apk && S.apk.versionCode && codeOf(d.appVersion) != null && codeOf(d.appVersion) < S.apk.versionCode ? ' · <b style="color:#e69100">↑ update beschikbaar (' + esc(S.apk.versionName) + ')</b>' : '') + (d.kind === 'app' ? ' · ' + (d.deviceOwner ? 'device owner' : 'geen device owner') + (d.overlayGranted === false ? ' · veegblokkade UIT' : '') : '') + '</span>';
+    return '<span class="pill ' + (on ? 'on-p' : 'off-p') + '">' + (on ? 'online' : 'offline') + '</span> <span class="muted">' + ago(d.lastSeen) + ' · ' + (d.kind === 'browser' ? 'browser' : d.kind === 'linux' ? 'ubuntu-agent ' + esc(d.appVersion || '') : 'app ' + esc(d.appVersion || '')) +
+      (d.battery != null && d.battery >= 0 ? ' · ' + d.battery + '%' : '') + (d.touchLocked != null ? ' · touch ' + (d.touchLocked ? 'uit' : 'aan') : '') + (d.screenOn === false ? ' · scherm uit' : '') + (d.updateStatus ? ' · update: ' + esc(d.updateStatus) : '') + (behindOf(d) ? ' · <b style="color:#e69100">↑ update beschikbaar (' + esc(behindOf(d)) + ')</b>' : '') + (d.kind === 'app' ? ' · ' + (d.deviceOwner ? 'device owner' : 'geen device owner') + (d.overlayGranted === false ? ' · veegblokkade UIT' : '') : '') + '</span>';
   }
   function cmd(target, type, params, label) {
     if ((type === 'reboot') && !confirm('Paneel(en) herstarten?')) return;
@@ -246,12 +246,18 @@
     ['badgeStyle', 'Badge-stijl: lines, roof, glass, line, fade, 3d, both of plain'], ['defaultBgImage', 'Standaard achtergrond (kleedkamer zonder zaal)'], ['defaultBgDim', 'Standaard achtergrond donker maken (0-90 %)'], ['ssIdleMinutes', 'Screensaver na (min) zonder reserveringen · 0 = uit'], ['ssPixelShift', 'Pixel-shift (1 = aan, 0 = uit)'], ['defaultTouchDisableAfterSec', 'Touch standaard uit na (s) · 0 = nooit'], ['adminPin', 'Pincode voor beheer-gebaar op paneel']];
   // hoeveel schermen draaien een oudere app dan de apk op de server (appversie = 1.0.<code>)
   function codeOf(v) { var m = /(\d+)\s*$/.exec(String(v || '')); return m ? parseInt(m[1], 10) : null; }
-  function behindIds() {
-    var a = S.apk || {}; if (!a.exists || !a.versionCode) return [];
-    return S.screens.filter(function (sc) { var d = S.devices[sc.id], c = d && d.kind === 'app' ? codeOf(d.appVersion) : null; return c != null && c < a.versionCode; }).map(function (sc) { return sc.id; });
+  function vnum(v) { return String(v || '').split(/\D+/).filter(Boolean).map(Number); }
+  function vless(a, b) { for (var i = 0; i < Math.max(a.length, b.length); i++) { var x = a[i] || 0, y = b[i] || 0; if (x !== y) return x < y; } return false; }
+  // geeft de nieuwere versie terug als dit apparaat achterloopt (Android: apk op de server; Ubuntu: agent op de server), anders null
+  function behindOf(d) {
+    if (!d) return null;
+    if (d.kind === 'app' && S.apk && S.apk.exists && S.apk.versionCode) { var c = codeOf(d.appVersion); return c != null && c < S.apk.versionCode ? S.apk.versionName : null; }
+    if (d.kind === 'linux' && S.agent) return vless(vnum(d.appVersion), vnum(S.agent.versionName)) ? S.agent.versionName : null;
+    return null;
   }
+  function behindIds() { return S.screens.filter(function (sc) { return behindOf(S.devices[sc.id]); }).map(function (sc) { return sc.id; }); }
   function apkBehind() {
-    var a = S.apk || {}; if (!a.versionCode) return '';
+    var a = S.apk || {}; if (!a.versionCode && !S.agent) return '';
     var n = behindIds().length;
     return n ? '<span class="pill warn-p">' + n + ' scherm(en) lopen achter</span>' : '<span class="pill on-p">alle schermen up-to-date</span>';
   }
@@ -327,9 +333,9 @@
       var s = DIAG.seen[sc.id] || {}, d = DIAG.devices[sc.id], hn = hint(sc.id);
       h += '<tr><td><b>' + esc(sc.name) + '</b><br><span class="muted">' + esc(sc.id) + '</span></td>' +
         '<td>' + (s.playerAt ? dAgo(s.playerAt) + ' geleden<br><span class="muted">' + esc(s.playerIp || '') + '</span>' : '<span class="muted">nooit</span>') + '</td>' +
-        '<td>' + (d ? dAgo(d.lastSeen) + ' geleden<br><span class="muted">' + esc(d.kind === 'browser' ? 'browser-speler' : 'app ' + (d.appVersion || '')) + ' · ' + esc(d.ip || '') + '</span>' : '<span class="muted">nooit</span>') +
+        '<td>' + (d ? dAgo(d.lastSeen) + ' geleden<br><span class="muted">' + esc(d.kind === 'browser' ? 'browser-speler' : (d.kind === 'linux' ? 'ubuntu-agent ' : 'app ') + (d.appVersion || '')) + ' · ' + esc(d.ip || '') + '</span>' : '<span class="muted">nooit</span>') +
           (s.hbResult && s.hbResult !== 'ok' ? '<br><span style="color:var(--bad)">laatste poging: ' + (s.hbResult === '401' ? 'geweigerd (key)' : 'geweigerd (onbekend ID)') + ' ' + dAgo(s.hbAt) + ' geleden</span>' : '') + '</td>' +
-        '<td class="muted">' + (d && d.kind === 'app' ? esc(d.model || '') + '<br>service/activiteit: ' + (d.activityAlive ? 'actief' : 'GEEN activiteit') + ' · uptime ' + (d.uptimeMin != null ? Math.round(d.uptimeMin / 60 * 10) / 10 + ' u' : '?') + (d.hbFails ? '<br>mislukte pogingen: ' + d.hbFails + ' (' + esc(d.hbError || '') + ')' : '') + (d.updateStatus ? '<br>update: ' + esc(d.updateStatus) : '') : (d ? esc((d.ua || '').slice(0, 60)) : (s.playerUa ? esc(s.playerUa.slice(0, 70)) : ''))) + '</td>' +
+        '<td class="muted">' + (d && (d.kind === 'app' || d.kind === 'linux') ? esc(d.model || '') + '<br>service/activiteit: ' + (d.activityAlive ? 'actief' : (d.kind === 'linux' ? 'browser draait niet' : 'GEEN activiteit')) + ' · uptime ' + (d.uptimeMin != null ? Math.round(d.uptimeMin / 60 * 10) / 10 + ' u' : '?') + (d.hbFails ? '<br>mislukte pogingen: ' + d.hbFails + ' (' + esc(d.hbError || '') + ')' : '') + (d.updateStatus ? '<br>update: ' + esc(d.updateStatus) : '') : (d ? esc((d.ua || '').slice(0, 60)) : (s.playerUa ? esc(s.playerUa.slice(0, 70)) : ''))) + '</td>' +
         '<td><span class="pill ' + hn[0] + '" style="display:block;white-space:normal;border-radius:6px">' + esc(hn[1]) + '</span></td></tr>';
     });
     h += '</table>';
