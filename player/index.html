@@ -326,7 +326,14 @@
     return h + '</div>';
   }
   function roomNo(it, fid) { return String(it.facilityName || ('#' + fid)).replace(/^kleedkamer\s*/i, ''); }
+  // verdieping uit het kleedkamernummer: "0.3" → 0, "1.7" → 1, "-1.2" of "min1.2" → -1; onbekend → null
+  function floorOf(no) {
+    var m = /^\s*(min\s*|[-\u2212]\s*)?(\d+)\s*[.,]\s*\d+/i.exec(String(no));
+    return m ? (m[1] ? -1 : 1) * parseInt(m[2], 10) : null;
+  }
+  var FLOOR_NAME = { '0': 'Begane grond', '1': '1e verdieping', '-1': 'Kelder' };
   function overviewHtml(sl) {
+    var wantFloor = (sl.floor === undefined || sl.floor === null || sl.floor === '') ? null : parseInt(sl.floor, 10);
     // 1) verzamel alle reserveringen per kleedkamer; 2) voeg kleedkamers van dezelfde reservering (zelfde zaal + tekst) samen
     var groups = {}, order = [];
     (sl.facilityIds || []).forEach(function (fid) {
@@ -334,8 +341,10 @@
       f.items.forEach(function (it) {
         var v = firstText(it); if (!v) return;
         var zk = it.zone || '', key = zk + '|' + String(v).trim().toLowerCase();
+        var no = roomNo(it, fid);
+        if (wantFloor !== null && floorOf(no) !== wantFloor) return;
         if (!groups[key]) { groups[key] = { zone: zk, text: v, rooms: [] }; order.push(key); }
-        var no = roomNo(it, fid); if (groups[key].rooms.indexOf(no) < 0) groups[key].rooms.push(no);
+        if (groups[key].rooms.indexOf(no) < 0) groups[key].rooms.push(no);
       });
     });
     var cmp = function (x, y) { return String(x).localeCompare(String(y), 'nl', { numeric: true }); };
@@ -350,7 +359,7 @@
     var multi = list.filter(function (g) { return g.zone === 'multi'; });
     if (multi.length) blocks.push({ title: 'Beide zalen', rows: multi });
     var rest = list.filter(function (g) { return g.zone !== 'multi' && (!g.zone || !(STATE.zones && STATE.zones[g.zone])); });
-    var head = '<div class="badge ovb"><span class="bl">Kleedkamers</span><span class="bn">' + esc(sl.badge || 'Overzicht') + '</span></div>' + waveHtml();
+    var head = '<div class="badge ovb"><span class="bl">Kleedkamers</span><span class="bn">' + esc(sl.badge || (wantFloor !== null && FLOOR_NAME[wantFloor]) || 'Overzicht') + '</span></div>' + waveHtml();
     if (!list.length) return head + '<div class="sched"><div class="line main idle"><span class="k">Status</span><span class="v">' + esc(STATE.texts.overviewFallback) + '</span></div></div>';
     // lettergrootte op basis van het aantal rijen in het langste blok; past het niet, dan scrolt de lijst
     var maxRows = Math.max.apply(null, blocks.map(function (b) { return b.rows.length; }).concat([rest.length ? Math.ceil(rest.length / Math.max(1, blocks.length || 1)) : 1]));

@@ -151,6 +151,7 @@
     h += '<div class="grid"><div><label>Titel (kop)</label><input class="ti" value="' + esc(sl.title || '') + '"></div>';
     if (sl.kind === 'room') h += '<div><label>Badge-tekst (leeg = nummer uit titel)</label><input class="bd" value="' + esc(sl.badge || '') + '" placeholder="0.1"></div>';
     if (sl.kind === 'room' || sl.kind === 'overview') h += '<div><label>Facility-ID\'s (komma)</label><input class="fi" value="' + esc((sl.facilityIds || []).join(',')) + '"></div>';
+    if (sl.kind === 'overview') h += '<div><label>Verdieping (alleen kleedkamers van deze verdieping tonen)</label><select class="fl"><option value=""' + (!sl.floor ? ' selected' : '') + '>Alle verdiepingen</option><option value="0"' + (sl.floor === '0' ? ' selected' : '') + '>Begane grond (0.x)</option><option value="1"' + (sl.floor === '1' ? ' selected' : '') + '>1e verdieping (1.x)</option><option value="-1"' + (sl.floor === '-1' ? ' selected' : '') + '>Kelder (-1.x)</option></select></div>';
     h += '</div>';
     if (sl.kind === 'text') h += '<label>Kop in beeld</label><input class="hd" value="' + esc(sl.heading || '') + '"><label>Tekst (elke regel = 1 punt bij lijst)</label><textarea class="tx" rows="4">' + esc(sl.text || '') + '</textarea><label><input type="checkbox" class="al"' + (sl.asList ? ' checked' : '') + '> Toon als lijst</label><label>Afbeelding-URL</label><input class="im" value="' + esc(sl.image || '') + '">';
     return h + '</div>';
@@ -173,6 +174,7 @@
         sc.slides = [].map.call(d.querySelectorAll('.slide'), function (e) {
           var o = { kind: $('.k', e).value, durationSec: +$('.dur', e).value || 15, title: $('.ti', e).value };
           if ($('.bd', e)) o.badge = $('.bd', e).value;
+          if ($('.fl', e)) o.floor = $('.fl', e).value;
           if ($('.fi', e)) o.facilityIds = $('.fi', e).value.split(',').map(function (x) { return +x.trim(); }).filter(Boolean);
           if ($('.tx', e)) { o.heading = $('.hd', e).value; o.text = $('.tx', e).value; o.asList = $('.al', e).checked; o.image = $('.im', e).value; }
           return o;

@@ -163,6 +163,11 @@ function decode(s) {
   return String(s || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).trim();
 }
+// alleen voor SEM_MOCK: kleedkamernummer (bv. 1.2) uit de eigen kleedkamer-schermen, zodat verdiepingen te testen zijn
+function mockRoomNo(fid) {
+  for (const sc of db.screens) for (const sl of sc.slides || []) if (sl.kind === 'room' && (sl.facilityIds || [])[0] == fid) { const m = /kleedkamer\s*(.+)$/i.exec(sl.title || ''); if (m) return m[1].trim(); }
+  return fid;
+}
 function parseSemHtml(html) {
   const out = [];
   const rows = String(html || '').match(/<tr[^>]*class=['"]r['"][^>]*>[\s\S]*?<\/tr>/gi) || [];
@@ -198,7 +203,7 @@ function mockFacility(fid) {
   const names = ['Toneelgroep Vondel', 'Kinderkoor Rijnmond', 'Dansschool Lenore', 'Orkest Haagland'];
   if (fid % 3 === 0) return { raw: '', items: [] };
   const n = names[(process.env.SEM_MOCK_MULTI === '1' && fid === 13 ? 10 : fid) % names.length]; // SEM_MOCK_MULTI=1: Grote en Kleine Zaal met dezelfde reservering (test)
-  return { raw: '', items: [{ recordNumber: '1', welcome: 'Welkom ' + n, name: n, facilityWelcome: 'Veel plezier vandaag!', facilityName: 'Kleedkamer ' + fid }] };
+  return { raw: '', items: [{ recordNumber: '1', welcome: 'Welkom ' + n, name: n, facilityWelcome: 'Veel plezier vandaag!', facilityName: 'Kleedkamer ' + mockRoomNo(fid) }] };
 }
 
 function allFacilityIds() {
