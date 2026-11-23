@@ -123,19 +123,9 @@ class MainActivity : Activity() {
     private fun setupKiosk() {
         hideSystemUi()
         if (!AdminReceiver.isDeviceOwner(this)) return
-        val dpm = AdminReceiver.dpm(this); val admin = AdminReceiver.component(this)
-        try {
-            dpm.setLockTaskPackages(admin, arrayOf(packageName))
-            if (Build.VERSION.SDK_INT >= 28) dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
-            dpm.setKeyguardDisabled(admin, true)
-            dpm.setStatusBarDisabled(admin, true)
-            dpm.setGlobalSetting(admin, Settings.Global.STAY_ON_WHILE_PLUGGED_IN, "7")
-            val home = IntentFilter(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME); addCategory(Intent.CATEGORY_DEFAULT) }
-            dpm.addPersistentPreferredActivity(admin, home, android.content.ComponentName(this, MainActivity::class.java))
-            startLockTask()
-        } catch (e: Exception) {
-            KioskState.lastResult = "kiosk-setup: ${e.message}"
-        }
+        KioskPolicy.apply(this)
+        try { startLockTask() } catch (e: Exception) { KioskState.lastResult = "lockTask: ${e.message}" }
+        if (KioskPolicy.lastApply != "ok") KioskState.lastResult = "kiosk-setup: ${KioskPolicy.lastApply}"
     }
 
     @Suppress("DEPRECATION")
@@ -290,7 +280,9 @@ class MainActivity : Activity() {
         val tv = android.widget.TextView(this).apply {
             setPadding(48, 24, 48, 0); textSize = 14f
             text = "App: $v\nServer: ${p.serverUrl}\nScherm-ID: ${p.screenId}\nDevice key: ${if (p.deviceKey.isEmpty()) "leeg" else "ingevuld"}\n" +
-                "Device owner: ${if (AdminReceiver.isDeviceOwner(this@MainActivity)) "ja" else "nee"}\n\n" +
+                "Device owner: ${if (AdminReceiver.isDeviceOwner(this@MainActivity)) "ja" else "nee"}\n" +
+                "Home-app is deze app: ${if (KioskPolicy.homeIsUs(this@MainActivity)) "ja" else "NEE (app-kiezer kan verschijnen)"}\n" +
+                (if (KioskPolicy.lastApply.isNotEmpty()) "Kiosk-beleid: ${KioskPolicy.lastApply}\n" else "") + "\n" +
                 "Achtergrondservice: " + (if (KioskState.serviceStartedAt == 0L) "NIET GESTART" else "draait sinds " + ago(KioskState.serviceStartedAt)) + "\n" +
                 "Laatste heartbeat-poging: ${ago(KioskState.beatAt)}\n" +
                 "Laatste geslaagd: ${ago(KioskState.beatOkAt)}\n" +

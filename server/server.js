@@ -495,6 +495,8 @@ async function handleApi(req, res, url) {
     hs.offlineLogged = false;
     note('ok', 'info', 'heartbeat ok');
     if (body.hbFails > 0 && body.hbError && hs.clientErr !== body.hbError) { hs.clientErr = body.hbError; log('warn', id, 'app meldt ' + body.hbFails + ' mislukte heartbeat(s) vlak ervoor; laatste fout: ' + body.hbError); }
+    if (body.homeIsUs === false && hs.homeLogged !== false) { hs.homeLogged = false; log('error', id, 'deze app is NIET de HOME-app van het paneel: na een herstart of crash toont Android de app-kiezer' + (body.kioskSetup ? ' (kiosk-beleid: ' + body.kioskSetup + ')' : '')); }
+    else if (body.homeIsUs === true && hs.homeLogged === false) { hs.homeLogged = true; log('info', id, 'HOME-app hersteld: de app is weer de vaste startapp'); }
     if (body.lastResult && hs.lastResult !== body.lastResult) { hs.lastResult = body.lastResult; log('info', id, 'app: ' + body.lastResult); }
     (body.ackIds || []).forEach(a => { cmdDone[a] = Date.now(); if (cmdMeta[a]) { lastDone[id] = { type: cmdMeta[a].type, at: Date.now() }; log('info', id, 'commando "' + cmdMeta[a].type + '" bevestigd door scherm'); } db.commands[id] = (db.commands[id] || []).filter(c => c.id !== a); });
     Object.keys(cmdDone).forEach(k => { if (Date.now() - cmdDone[k] > 3600000) delete cmdDone[k]; });

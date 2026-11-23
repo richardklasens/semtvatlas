@@ -75,6 +75,8 @@ class KioskService : Service() {
         while (running) {
             try { beat() } catch (_: Exception) { /* volgende ronde opnieuw */ }
             watchdog()
+            // Zelfherstel: is deze app (om wat voor reden) niet meer de HOME-app, zet dat dan opnieuw
+            try { if (AdminReceiver.isDeviceOwner(this) && !KioskPolicy.homeIsUs(this)) KioskPolicy.apply(this) } catch (_: Exception) {}
             SystemClock.sleep(INTERVAL_MS)
         }
     }
@@ -108,6 +110,8 @@ class KioskService : Service() {
             .put("overlayGranted", Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this))
             .put("activityAlive", KioskState.activity != null)
             .put("lastResult", KioskState.lastResult)
+            .put("homeIsUs", KioskPolicy.homeIsUs(this))
+            .put("kioskSetup", KioskPolicy.lastApply)
             .put("hbFails", KioskState.beatFails)
             .put("hbError", KioskState.beatError)
             .put("updateStatus", KioskState.updateStatus)
