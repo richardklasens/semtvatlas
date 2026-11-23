@@ -454,6 +454,8 @@ function tickSchedules() {
     const d = db.devices[sc.id], sentAt = (lastSchedule[sc.id] || {}).at || 0;
     // opnieuw sturen als het schema wisselt, of als het scherm (bv. na een herstart) niet doet wat het schema wil
     const wrong = d && now - d.lastSeen < 60000 && typeof d.screenOn === 'boolean' && d.screenOn !== inOn && now - sentAt > 5 * 60000;
+    // na een herstart van de server: een scherm dat al goed staat hoeft geen commando
+    if (!lastSchedule[sc.id] && d && now - d.lastSeen < 60000 && d.screenOn === inOn) { lastSchedule[sc.id] = { want, at: now.getTime() }; return; }
     if ((lastSchedule[sc.id] || {}).want !== want || wrong) {
       lastSchedule[sc.id] = { want, at: now.getTime() };
       queueCommand(sc.id, want, { by: 'schedule' });
