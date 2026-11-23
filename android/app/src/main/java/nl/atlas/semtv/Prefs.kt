@@ -27,6 +27,12 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("brightness", -1)
         set(v) = sp.edit().putInt("brightness", v).apply()
     // Schermvastzetten (Android "screen pinning") zonder Device Owner; aan/uit via het beheermenu
+    /** Tot dit tijdstip (ms) is de kiosk bewust gepauzeerd ("Kiosk verlaten"); daarna herstelt de service hem vanzelf. */
+    var pausedUntil: Long
+        get() = sp.getLong("pausedUntil", 0L)
+        set(v) = sp.edit().putLong("pausedUntil", v).apply()
+    val paused: Boolean get() = pausedUntil > System.currentTimeMillis()
+
     var pinScreen: Boolean
         get() = sp.getBoolean("pinScreen", false)
         set(v) = sp.edit().putBoolean("pinScreen", v).apply()

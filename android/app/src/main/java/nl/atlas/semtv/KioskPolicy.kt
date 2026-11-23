@@ -39,4 +39,14 @@ object KioskPolicy {
         step("stayOn") { dpm.setGlobalSetting(admin, Settings.Global.STAY_ON_WHILE_PLUGGED_IN, "7") }
         lastApply = if (failed.isEmpty()) "ok" else failed.joinToString("; ")
     }
+
+    /** Tijdelijk uit de kiosk: andere startapp mag, statusbalk en keyguard weer aan, zodat je bij de Android-instellingen kunt. */
+    fun release(ctx: Context) {
+        if (!AdminReceiver.isDeviceOwner(ctx)) return
+        val dpm = AdminReceiver.dpm(ctx); val admin = AdminReceiver.component(ctx)
+        try { dpm.clearPackagePersistentPreferredActivities(admin, ctx.packageName) } catch (_: Throwable) {}
+        try { dpm.setStatusBarDisabled(admin, false) } catch (_: Throwable) {}
+        try { dpm.setKeyguardDisabled(admin, false) } catch (_: Throwable) {}
+        lastApply = "gepauzeerd"
+    }
 }

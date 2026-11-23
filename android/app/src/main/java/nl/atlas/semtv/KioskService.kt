@@ -74,9 +74,18 @@ class KioskService : Service() {
     private fun loop() {
         while (running) {
             try { beat() } catch (_: Exception) { /* volgende ronde opnieuw */ }
-            watchdog()
-            // Zelfherstel: is deze app (om wat voor reden) niet meer de HOME-app, zet dat dan opnieuw
-            try { if (AdminReceiver.isDeviceOwner(this) && !KioskPolicy.homeIsUs(this)) KioskPolicy.apply(this) } catch (_: Exception) {}
+            if (prefs.paused) {
+                // "Kiosk verlaten": watchdog en zelfherstel staan uit tot de pauze voorbij is
+            } else {
+                if (prefs.pausedUntil != 0L) {      // pauze net afgelopen: kiosk herstellen en de app weer naar voren halen
+                    prefs.pausedUntil = 0L
+                    try { KioskPolicy.apply(this) } catch (_: Exception) {}
+                    try { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
+                }
+                watchdog()
+                // Zelfherstel: is deze app (om wat voor reden) niet meer de HOME-app, zet dat dan opnieuw
+                try { if (AdminReceiver.isDeviceOwner(this) && !KioskPolicy.homeIsUs(this)) KioskPolicy.apply(this) } catch (_: Exception) {}
+            }
             SystemClock.sleep(INTERVAL_MS)
         }
     }
@@ -111,6 +120,7 @@ class KioskService : Service() {
             .put("activityAlive", KioskState.activity != null)
             .put("lastResult", KioskState.lastResult)
             .put("homeIsUs", KioskPolicy.homeIsUs(this))
+            .put("kioskPausedUntil", prefs.pausedUntil)
             .put("kioskSetup", KioskPolicy.lastApply)
             .put("hbFails", KioskState.beatFails)
             .put("hbError", KioskState.beatError)

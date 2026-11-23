@@ -30,6 +30,7 @@ import android.widget.ScrollView
  * Kiosk-scherm: WebView met de player, een touch-guard laag en (indien Device Owner) lock task.
  */
 class MainActivity : Activity() {
+    companion object { const val PAUSE_MIN = 15 }
     private lateinit var prefs: Prefs
     private lateinit var root: FrameLayout
     private var web: WebView? = null
@@ -123,6 +124,7 @@ class MainActivity : Activity() {
     private fun setupKiosk() {
         hideSystemUi()
         if (!AdminReceiver.isDeviceOwner(this)) return
+        if (Prefs(this).paused) return          // bewust gepauzeerd via "Kiosk verlaten"
         KioskPolicy.apply(this)
         try { startLockTask() } catch (e: Exception) { KioskState.lastResult = "lockTask: ${e.message}" }
         if (KioskPolicy.lastApply != "ok") KioskState.lastResult = "kiosk-setup: ${KioskPolicy.lastApply}"
@@ -256,7 +258,15 @@ class MainActivity : Activity() {
                 0 -> setLocked(false)
                 1 -> reload()
                 2 -> startActivityForResult(Intent(this, SetupActivity::class.java), 1)
-                3 -> { try { stopLockTask() } catch (_: Exception) {}; finish() }
+                3 -> AlertDialog.Builder(this).setTitle("Kiosk verlaten")
+                    .setMessage("De kiosk wordt ${PAUSE_MIN} minuten uitgezet, zodat je bij de Android-instellingen kunt. Daarna zet de app de kiosk zelf weer aan.")
+                    .setPositiveButton("Verlaten") { _, _ ->
+                        Prefs(this).pausedUntil = System.currentTimeMillis() + PAUSE_MIN * 60_000L
+                        KioskPolicy.release(this)
+                        try { stopLockTask() } catch (_: Exception) {}
+                        try { startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
+                        finish()
+                    }.setNegativeButton("Annuleren", null).show()
                 4 -> startActivity(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
                     .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, AdminReceiver.component(this)))
                 5 -> startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
