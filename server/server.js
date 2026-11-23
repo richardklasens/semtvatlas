@@ -440,12 +440,20 @@ function queueCommand(screenId, type, params) {
 const lastSchedule = {};
 function tickSchedules() {
   const now = new Date();
-  const hhmm = now.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Amsterdam' });
+  // Nederlandse tijd (zomer-/wintertijd volgt vanzelf uit Europe/Amsterdam), 24-uurs, 00:00–23:59
+  const hhmm = new Intl.DateTimeFormat('nl-NL', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Amsterdam' }).format(now);
   db.screens.forEach(sc => {
     const sch = sc.schedule; if (!sch || !sch.enabled) return;
     const inOn = sch.on <= sch.off ? (hhmm >= sch.on && hhmm < sch.off) : (hhmm >= sch.on || hhmm < sch.off);
     const want = inOn ? 'screen_on' : 'screen_off';
-    if (lastSchedule[sc.id] !== want) { lastSchedule[sc.id] = want; queueCommand(sc.id, want, { by: 'schedule' }); }
+    const d = db.devices[sc.id], sentAt = (lastSchedule[sc.id] || {}).at || 0;
+    // opnieuw sturen als het schema wisselt, of als het scherm (bv. na een herstart) niet doet wat het schema wil
+    const wrong = d && now - d.lastSeen < 60000 && typeof d.screenOn === 'boolean' && d.screenOn !== inOn && now - sentAt > 5 * 60000;
+    if ((lastSchedule[sc.id] || {}).want !== want || wrong) {
+      lastSchedule[sc.id] = { want, at: now.getTime() };
+      queueCommand(sc.id, want, { by: 'schedule' });
+      log('info', sc.id, 'schema (' + hhmm + ', NL-tijd): ' + (want === 'screen_on' ? 'scherm AAN' : 'scherm UIT') + (wrong ? ' (opnieuw: scherm stond verkeerd)' : ''));
+    }
   });
 }
 setInterval(tickSchedules, 30000);

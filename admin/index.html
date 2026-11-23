@@ -164,12 +164,12 @@
         '<div><label>Touch-modus</label><select id="f_tm"><option value="timed"' + (sc.touchMode === 'timed' ? ' selected' : '') + '>Na x seconden uitschakelen</option><option value="always"' + (sc.touchMode === 'always' ? ' selected' : '') + '>Altijd aan</option><option value="off"' + (sc.touchMode === 'off' ? ' selected' : '') + '>Altijd uit</option></select></div>' +
         '<div><label>Touch uit na (s) · -1 = standaard</label><input id="f_td" type="number" value="' + sc.touchDisableAfterSec + '"></div>' +
         '<div><label>Helderheid % (-1 = systeem)</label><input id="f_br" type="number" min="-1" max="100" value="' + sc.brightness + '"></div></div>' +
-        '<div class="row"><label style="margin:0"><input type="checkbox" id="f_sch"' + (sc.schedule && sc.schedule.enabled ? ' checked' : '') + '> Scherm automatisch aan/uit</label><input id="f_on" type="time" style="width:auto" value="' + esc((sc.schedule || {}).on || '07:00') + '"> tot <input id="f_off" type="time" style="width:auto" value="' + esc((sc.schedule || {}).off || '23:30') + '"></div>' +
+        '<div class="row"><label style="margin:0"><input type="checkbox" id="f_sch"' + (sc.schedule && sc.schedule.enabled ? ' checked' : '') + '> Scherm automatisch aan/uit</label>' + timeSel('f_on', (sc.schedule || {}).on || '07:00') + ' tot ' + timeSel('f_off', (sc.schedule || {}).off || '23:30') + ' <span class="muted">(24-uurs, Nederlandse tijd, zomer-/wintertijd automatisch)</span></div>' +
         '<h4>Slides (in volgorde afgespeeld)</h4><div id="slides">' + sc.slides.map(slideForm).join('') + '</div><button class="b" id="addSlide">+ Slide</button>' +
         '<div class="row" style="margin-top:18px"><button class="b p" id="save">Opslaan</button><button class="b" id="cancel">Annuleren</button><span style="flex:1"></span>' + (id ? '<button class="b d" id="del">Verwijderen</button>' : '') + '</div>';
       collect = function () {
         sc.name = $('#f_name', d).value; sc.group = $('#f_group', d).value; sc.touchMode = $('#f_tm', d).value; sc.touchDisableAfterSec = +$('#f_td', d).value; sc.brightness = +$('#f_br', d).value;
-        sc.schedule = { enabled: $('#f_sch', d).checked, on: $('#f_on', d).value, off: $('#f_off', d).value };
+        sc.schedule = { enabled: $('#f_sch', d).checked, on: timeVal(d, 'f_on'), off: timeVal(d, 'f_off') };
         sc.slides = [].map.call(d.querySelectorAll('.slide'), function (e) {
           var o = { kind: $('.k', e).value, durationSec: +$('.dur', e).value || 15, title: $('.ti', e).value };
           if ($('.bd', e)) o.badge = $('.bd', e).value;
@@ -261,6 +261,17 @@
     var n = behindIds().length;
     return n ? '<span class="pill warn-p">' + n + ' scherm(en) lopen achter</span>' : '<span class="pill on-p">alle schermen up-to-date</span>';
   }
+  // 24-uurs tijdkeuze (de browser-eigen <input type=time> volgt de taalinstelling en toont soms am/pm)
+  function timeSel(id, val) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(val || ''), hh = m ? ('0' + m[1]).slice(-2) : '00', mm = m ? m[2] : '00', o = '';
+    var hs = '', ms = '', i, mins = [];
+    for (i = 0; i < 24; i++) { var h2 = ('0' + i).slice(-2); hs += '<option' + (h2 === hh ? ' selected' : '') + '>' + h2 + '</option>'; }
+    for (i = 0; i < 60; i += 5) mins.push(('0' + i).slice(-2));
+    if (mins.indexOf(mm) < 0) { mins.push(mm); mins.sort(); }
+    mins.forEach(function (x) { ms += '<option' + (x === mm ? ' selected' : '') + '>' + x + '</option>'; });
+    return '<select id="' + id + 'h" style="width:auto">' + hs + '</select> : <select id="' + id + 'm" style="width:auto">' + ms + '</select>';
+  }
+  function timeVal(root, id) { return $('#' + id + 'h', root).value + ':' + $('#' + id + 'm', root).value; }
   function apkCard() {
     var a = S.apk || {}, url = location.origin + '/downloads/app-release.apk';
     return '<div class="card"><h3 style="margin-top:0">Android-app</h3><p>' + (a.exists
