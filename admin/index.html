@@ -54,6 +54,7 @@
       <button data-t="settings">Instellingen</button>
       <button data-t="sem">SEM-status</button>
       <button data-t="diag">Diagnose</button>
+      <button data-t="devlog">Apparaatlog</button>
     </nav>
     <span style="flex:1"></span><button class="b" id="logout">Uitloggen</button>
   </header>
@@ -118,7 +119,7 @@
   /* ------------------------------------------------ tabs */
   function render() {
     if (!S) return;
-    ({ screens: rScreens, messages: rMessages, zones: rZones, settings: rSettings, sem: rSem, diag: rDiag })[TAB]();
+    ({ screens: rScreens, messages: rMessages, zones: rZones, settings: rSettings, sem: rSem, diag: rDiag, devlog: rDevlog })[TAB]();
   }
 
   function rScreens() {
@@ -374,6 +375,55 @@
       return '<div style="color:' + col[e.level] + '"><span style="opacity:.6">' + fmtT(e.t) + '</span> ' + (e.scope ? '<b>[' + esc(e.scope) + ']</b> ' : '') + esc(e.msg) + '</div>';
     }).join('') || '<span style="opacity:.6">Geen regels.</span>';
     if (atTop) box.scrollTop = 0;
+  }
+
+  /* ------------------------------------------------ apparaatlog: logpakketten die een paneel na een storing stuurt */
+  var DEV = { list: null, sel: '', packets: [] };
+  function devFmt(t) { return new Date(t).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+  function devCol(m) {
+    if (/hersteld/i.test(m)) return '#7fe0a1';
+    if (/MISLUKT|ZELFHERSTEL|fout|vastgelopen|SLAAPT|was (al )?weg/i.test(m)) return '#ff6b6b';
+    if (/gestart|gestopt|hersteld|herstart/i.test(m)) return '#ffb74d';
+    return '#e8dfe3';
+  }
+  function loadDev() {
+    return api('GET', '/devlogs').then(function (d) {
+      DEV.list = d;
+      var p = DEV.sel ? api('GET', '/devlogs?id=' + encodeURIComponent(DEV.sel)).then(function (r) { DEV.packets = r.packets; }) : Promise.resolve();
+      return p.then(function () { if (TAB === 'devlog') rDevlog(); });
+    }).catch(function () {});
+  }
+  setInterval(function () { if (TOKEN && TAB === 'devlog' && !document.activeElement.closest('#main select')) loadDev(); }, 10000);
+  function rDevlog() {
+    if (!DEV.list) { $('#main').innerHTML = '<div class="muted">Laden…</div>'; loadDev(); return; }
+    var h = '<div class="card"><b>Apparaatlog</b><div class="muted">Een paneel bewaart zijn eigen logboek en stuurt het alleen naar de server als er iets misging: heartbeat mislukt, geen verbinding, service of app herstart, het paneel zelf herstart, of zelfherstel. Zolang alles goed gaat, komt hier niets binnen. De tijden in de regels zijn de klok van het paneel.</div></div>';
+    var rows = DEV.list.screens.filter(function (x) { return x.packets > 0 || x.id === DEV.sel; });
+    if (!rows.length) h += '<div class="card muted">Nog geen logpakketten ontvangen. Dat is goed nieuws, of de panelen draaien nog een oude app-versie (de functie zit in de app van deze versie of nieuwer).</div>';
+    else {
+      h += '<table><tr><th>Scherm</th><th>Pakketten</th><th>Laatst ontvangen</th><th>Reden</th><th></th></tr>';
+      rows.forEach(function (x) {
+        h += '<tr' + (x.id === DEV.sel ? ' style="background:#f6eef2"' : '') + '><td><b>' + esc(x.name) + '</b><div class="muted"><code>' + esc(x.id) + '</code></div></td><td>' + x.packets + '</td><td>' + (x.lastAt ? devFmt(x.lastAt) : '—') + '</td><td>' + esc(x.lastReason) + '</td>' +
+          '<td><button class="b" data-dv="' + esc(x.id) + '">Bekijk</button></td></tr>';
+      });
+      h += '</table>';
+    }
+    if (DEV.sel) {
+      var sc = DEV.list.screens.filter(function (x) { return x.id === DEV.sel; })[0];
+      h += '<div class="row" style="margin-top:12px"><b>' + esc(sc ? sc.name : DEV.sel) + '</b><span style="flex:1"></span><button class="b" id="dv_copy">Kopieer alles</button><button class="b d" id="dv_clear">Wis log van dit scherm</button></div>';
+      if (!DEV.packets.length) h += '<div class="muted">Geen pakketten.</div>';
+      DEV.packets.forEach(function (pk) {
+        h += '<div class="card"><div class="row"><b>Ontvangen ' + devFmt(pk.at) + '</b><span class="muted">reden: ' + esc(pk.reason || 'onbekend') + ' · app ' + esc(pk.appVersion) + ' · paneel draaide ' + (pk.uptimeMin < 120 ? pk.uptimeMin + ' min' : Math.round(pk.uptimeMin / 60) + ' u') + ' · ' + esc(pk.ip) + ' · ' + pk.lines.length + ' regels</span></div>' +
+          '<div style="font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;max-height:40vh;overflow:auto;background:#1d1519;color:#e8dfe3;border-radius:6px;padding:8px">' +
+          pk.lines.slice().reverse().map(function (l) { return '<div style="color:' + devCol(l.m) + '"><span style="opacity:.6">' + devFmt(l.t) + '</span> ' + esc(l.m) + '</div>'; }).join('') + '</div></div>';
+      });
+    }
+    $('#main').innerHTML = h;
+    [].forEach.call(document.querySelectorAll('[data-dv]'), function (b) { b.onclick = function () { DEV.sel = b.dataset.dv; DEV.packets = []; loadDev(); }; });
+    if ($('#dv_copy')) $('#dv_copy').onclick = function () {
+      var t = DEV.packets.map(function (pk) { return '== ' + devFmt(pk.at) + ' (' + (pk.reason || '') + ', app ' + pk.appVersion + ')\n' + pk.lines.map(function (l) { return devFmt(l.t) + ' ' + l.m; }).join('\n'); }).join('\n\n');
+      (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast('Log gekopieerd'); }).catch(function () { toast('Kopiëren niet gelukt'); });
+    };
+    if ($('#dv_clear')) $('#dv_clear').onclick = function () { if (!confirm('Alle logpakketten van dit scherm wissen?')) return; api('POST', '/devlogs/clear', { id: DEV.sel }).then(function () { DEV.sel = ''; DEV.packets = []; loadDev(); }); };
   }
 
   function rSem() {

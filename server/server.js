@@ -115,6 +115,17 @@ function saveDb() {
   }, 200);
 }
 
+/* ------------------------------------------------------------------ apparaatlogs (pakketten die een paneel na een storing stuurt)
+   Bewust NIET in db.json: dat bestand wordt bij elke heartbeat volledig weggeschreven. Eigen bestand, alleen schrijven bij ontvangst. */
+const DEVLOG_FILE = path.join(DATA_DIR, 'devlogs.json');
+const DEVLOG_MAX_PACKETS = 20, DEVLOG_MAX_LINES = 400, DEVLOG_MAX_MSG = 240;
+let devlogs = {};   // screenId -> [{ at, reason, appVersion, uptimeMin, ip, lines: [{ t, m }] }], nieuwste laatst
+try { devlogs = JSON.parse(fs.readFileSync(DEVLOG_FILE, 'utf8')) || {}; } catch (e) { devlogs = {}; }
+function saveDevlogs() {
+  try { const tmp = DEVLOG_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(devlogs)); fs.renameSync(tmp, DEVLOG_FILE); }
+  catch (e) { log('error', '', 'apparaatlog opslaan mislukt: ' + e.message); }
+}
+
 /** Eerste start: de 17 bestaande kleedkamers + overzicht uit de oude HTML-pagina's. */
 function seedKleedkamers(d) {
   const rooms = [
@@ -519,6 +530,23 @@ async function handleApi(req, res, url) {
     pruneCommands(); saveDb();
     return send(res, 200, { commands: db.commands[id] || [], config: deviceConfigFor(sc), serverTime: Date.now() });
   }
+  mt = p.match(/^\/api\/device\/([^/]+)\/devlog$/);
+  if (mt && m === 'POST') {
+    if (!deviceOk(req)) return send(res, 401, { error: 'ongeldige device key' });
+    const id = decodeURIComponent(mt[1]);
+    if (!screenById(id)) return send(res, 404, { error: 'onbekend scherm' });
+    const body = await readBody(req);
+    const lines = (Array.isArray(body.lines) ? body.lines : []).slice(-DEVLOG_MAX_LINES)
+      .map(l => ({ t: Number(l && l.t) || 0, m: String((l && l.m) || '').slice(0, DEVLOG_MAX_MSG) })).filter(l => l.t > 0);
+    if (!lines.length) return send(res, 200, { ok: true, stored: 0 });
+    const pk = { at: Date.now(), reason: String(body.reason || '').slice(0, 160), appVersion: String(body.appVersion || '').slice(0, 20),
+      uptimeMin: Number(body.uptimeMin) || 0, ip: clientIp(req), lines };
+    (devlogs[id] = devlogs[id] || []).push(pk);
+    if (devlogs[id].length > DEVLOG_MAX_PACKETS) devlogs[id].splice(0, devlogs[id].length - DEVLOG_MAX_PACKETS);
+    saveDevlogs();
+    log('warn', id, 'apparaatlog ontvangen (' + lines.length + ' regels, reden: ' + (pk.reason || 'onbekend') + ') — zie tabblad Apparaatlog');
+    return send(res, 200, { ok: true, stored: lines.length });
+  }
   mt = p.match(/^\/api\/device\/([^/]+)\/config$/);
   if (mt && m === 'GET') {
     if (!deviceOk(req)) return send(res, 401, { error: 'ongeldige device key' });
@@ -544,6 +572,20 @@ async function handleApi(req, res, url) {
         seen, screens: db.screens.map(s => ({ id: s.id, name: s.name })), devices: db.devices, apk: apkInfo(), agent: agentInfo(),
         log: LOG.filter(e => e.id > since)
       });
+    }
+    if (p === '/api/admin/devlogs' && m === 'GET') {
+      const id = url.searchParams.get('id');
+      if (id) return send(res, 200, { id, packets: (devlogs[id] || []).slice().reverse() });
+      return send(res, 200, { serverTime: Date.now(), screens: db.screens.map(s => {
+        const pk = devlogs[s.id] || [], last = pk[pk.length - 1];
+        return { id: s.id, name: s.name, packets: pk.length, lastAt: last ? last.at : 0, lastReason: last ? last.reason : '' };
+      }) });
+    }
+    if (p === '/api/admin/devlogs/clear' && m === 'POST') {
+      const b = await readBody(req);
+      if (b.id) delete devlogs[b.id]; else devlogs = {};
+      saveDevlogs(); log('info', b.id || '', 'apparaatlog gewist vanuit het portaal');
+      return send(res, 200, { ok: true });
     }
     if (p === '/api/admin/diag/clear' && m === 'POST') { LOG.length = 0; log('info', '', 'log gewist vanuit het portaal'); return send(res, 200, { ok: true }); }
     if (p === '/api/admin/state' && m === 'GET') {

@@ -40,6 +40,18 @@ class Prefs(ctx: Context) {
         get() = sp.getString("adminPin", "1234") ?: "1234"
         set(v) = sp.edit().putString("adminPin", v).apply()
 
+    // Apparaatlog (DeviceLog): is er iets misgegaan dat de server nog niet weet, tot welk tijdstip is al verstuurd,
+    // en wanneer startte het paneel zichzelf voor het laatst opnieuw op (zelfherstel)
+    var logDirty: Boolean
+        get() = sp.getBoolean("logDirty", false)
+        set(v) = sp.edit().putBoolean("logDirty", v).apply()
+    var logSentUntil: Long
+        get() = sp.getLong("logSentUntil", 0L)
+        set(v) = sp.edit().putLong("logSentUntil", v).apply()
+    var lastSelfRestart: Long
+        get() = sp.getLong("lastSelfRestart", 0L)
+        set(v) { sp.edit().putLong("lastSelfRestart", v).commit() }   // commit: moet vastliggen voordat het paneel herstart
+
     val configured: Boolean get() = serverUrl.isNotEmpty() && screenId.isNotEmpty()
     val playerUrl: String get() = "$serverUrl/player/?screen=${java.net.URLEncoder.encode(screenId, "UTF-8")}&app=1"
 }

@@ -54,6 +54,7 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DeviceLog.init(this); DeviceLog.add("scherm-app gestart (activity onCreate)")
         prefs = Prefs(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
@@ -208,6 +209,7 @@ class MainActivity : Activity() {
     override fun onBackPressed() { /* negeren */ }
 
     override fun onDestroy() {
+        DeviceLog.add("scherm-app gestopt (activity onDestroy)")
         KioskState.main.removeCallbacks(idleCheck)
         if (KioskState.activity === this) KioskState.activity = null
         web?.destroy()

@@ -46,3 +46,16 @@ alleen op een gerootte tablet; *Scherm uit* alleen als de app device admin is.
 
 Touch-modus, touch-timeout, helderheid en admin-pincode komen met elke heartbeat (15 s) binnen en worden lokaal bewaard,
 zodat het paneel ook zonder server correct opstart.
+
+## Apparaatlog en zelfherstel
+
+- Het paneel houdt een eigen logboek bij in een bestand (`devlog.txt`, overleeft een herstart): start van service en app,
+  mislukte en herstelde heartbeats, commando's, en elke 10 minuten een levensteken (wifi-sterkte, scherm wakker/slapend,
+  Doze, energiebesparing, tijd sinds de laatste geslaagde heartbeat).
+- **Alleen na een storing** (heartbeat mislukt, service of app herstart, taak vastgelopen, zelfherstel) gaat de log als pakket
+  naar de server, zodra een heartbeat weer lukt. De server bewaart de laatste 20 pakketten per scherm in `devlogs.json`
+  (los van `db.json`); te zien in het portaal onder **Apparaatlog**. Een server zonder dit endpoint (oude versie) geeft een
+  fout; het paneel probeert dan elke 5 minuten opnieuw en laat de heartbeat ongemoeid.
+- **Bewaking** (los van de heartbeat-taak): staat de heartbeat-taak 90 s stil, dan start er een nieuwe. Lukt er 20 minuten
+  geen enkele heartbeat, dan herstart het paneel zichzelf (Device Owner) of anders de app, hooguit eens per 3 uur.
+  Na zo'n herstart staat het scherm even aan tot het schema het weer uitzet (tot ca. 5 min).
